@@ -36,7 +36,13 @@
 					"description": "Traces the communication between VS Code and the language server."
 				}
 			}
-		}
+		},
+    "commands": [
+      {
+        "command": "rcc",
+        "title": "rclang build"
+      }
+    ]
 	},
   "scripts": {
     "vscode:prepublish": "npm run compile",

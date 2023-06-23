@@ -45,6 +45,9 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
     assert(rootUri != null)
 
     initRclang()
+
+//    val f = new FileOperationsServerCapabilities
+//    val d = new WorkspaceServerCapabilities
     val c = new ServerCapabilities
     c.setTextDocumentSync(TextDocumentSyncKind.Full)
     c.setDocumentHighlightProvider(true)
@@ -60,6 +63,28 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
     c.setSignatureHelpProvider(new SignatureHelpOptions(
       /* triggerCharacters = */ List("(").asJava))
 
+    c.setCallHierarchyProvider(true)
+    c.setCodeActionProvider(true)
+    c.setCodeLensProvider(new CodeLensOptions(false))
+
+    c.setDeclarationProvider(true)
+//    c.setDiagnosticProvider(new DiagnosticRegistrationOptions(false, true))
+    c.setDocumentFormattingProvider(true)
+    c.setExecuteCommandProvider(new ExecuteCommandOptions(ServerCommands.allIds.toList.asJava))
+    c.setImplementationProvider(true)
+    c.setInlayHintProvider(true)
+    c.setInlineValueProvider(true)
+    c.setLinkedEditingRangeProvider(true)
+    c.setMonikerProvider(true)
+    c.setReferencesProvider(true)
+    c.setSemanticTokensProvider(new SemanticTokensWithRegistrationOptions(new SemanticTokensLegend(), false))
+//    c.setTextDocumentSync(true)
+    c.setTypeDefinitionProvider(true)
+    c.setTypeHierarchyProvider(true)
+//    c.setWorkspace(true)
+    c.setWorkspaceSymbolProvider(true)
+
+    // todo: Fuzzy symbol search
     // Do most of the initialization asynchronously so that we can return early
     // from this method and thus let the client know our capabilities.
     //    CompletableFuture.supplyAsync(() => drivers)
@@ -240,43 +265,88 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
 
   override def executeCommand(params: ExecuteCommandParams): CompletableFuture[AnyRef] = computeAsync { cancelToken =>
     logMessage("executeCommand")
+    params match
+      case ServerCommands.RCC() => logMessage("rcc")
+      case _ => logMessage("unknown command")
     null
   }
 
   // fix or refactor, e.g. alt + enter
-  override def codeAction(params: CodeActionParams): CompletableFuture[util.List[JEither[Command, CodeAction]]] = super.codeAction(params)
+  override def codeAction(params: CodeActionParams): CompletableFuture[util.List[JEither[Command, CodeAction]]] = computeAsync { cancelToken =>
+    logMessage("colorPresentation")
+    null
+  }
 
   // A code lens represents a command that should be shown along with source text, like the number of references, a way to run tests, etc.
   // 是不是类似于在上面显示一个[Run]一样的东西
-  override def codeLens(params: CodeLensParams): CompletableFuture[util.List[_ <: CodeLens]] = super.codeLens(params)
+  override def codeLens(params: CodeLensParams): CompletableFuture[util.List[_ <: CodeLens]] = computeAsync { cancelToken =>
+    logMessage("prepareCallHierarchy")
+    null
+  }
 
   // A document link is a range in a text document that links to an internal or external resource, like another text document or a web site.
-  override def documentLink(params: DocumentLinkParams): CompletableFuture[util.List[DocumentLink]] = super.documentLink(params)
+  override def documentLink(params: DocumentLinkParams): CompletableFuture[util.List[DocumentLink]] = computeAsync { cancelToken =>
+    logMessage("callHierarchyIncomingCalls")
+    null
+  }
 
+  override def documentColor(params: DocumentColorParams): CompletableFuture[util.List[ColorInformation]] = computeAsync { cancelToken =>
+    logMessage("documentColor")
+    Nil.asJava
+  }
 
-  override def documentColor(params: DocumentColorParams): CompletableFuture[util.List[ColorInformation]] = super.documentColor(params)
+  override def colorPresentation(params: ColorPresentationParams): CompletableFuture[util.List[ColorPresentation]] = computeAsync { cancelToken =>
+    logMessage("colorPresentation")
+    null
+  }
 
-  override def colorPresentation(params: ColorPresentationParams): CompletableFuture[util.List[ColorPresentation]] = super.colorPresentation(params)
+  override def prepareCallHierarchy(params: CallHierarchyPrepareParams): CompletableFuture[util.List[CallHierarchyItem]] = computeAsync { cancelToken =>
+    logMessage("prepareCallHierarchy")
+    null
+  }
 
-  override def foldingRange(params: FoldingRangeRequestParams): CompletableFuture[util.List[FoldingRange]] = super.foldingRange(params)
+  override def callHierarchyIncomingCalls(params: CallHierarchyIncomingCallsParams): CompletableFuture[util.List[CallHierarchyIncomingCall]] = computeAsync { cancelToken =>
+    logMessage("callHierarchyIncomingCalls")
+    null
+  }
 
-  override def prepareCallHierarchy(params: CallHierarchyPrepareParams): CompletableFuture[util.List[CallHierarchyItem]] = super.prepareCallHierarchy(params)
+  override def callHierarchyOutgoingCalls(params: CallHierarchyOutgoingCallsParams): CompletableFuture[util.List[CallHierarchyOutgoingCall]] = computeAsync { cancelToken =>
+    logMessage("callHierarchyOutgoingCalls")
+    null
+  }
 
-  override def callHierarchyIncomingCalls(params: CallHierarchyIncomingCallsParams): CompletableFuture[util.List[CallHierarchyIncomingCall]] = super.callHierarchyIncomingCalls(params)
+  override def semanticTokensFull(params: SemanticTokensParams): CompletableFuture[SemanticTokens] = computeAsync { cancelToken =>
+    logMessage("semanticTokensFull")
+    null
+  }
 
-  override def callHierarchyOutgoingCalls(params: CallHierarchyOutgoingCallsParams): CompletableFuture[util.List[CallHierarchyOutgoingCall]] = super.callHierarchyOutgoingCalls(params)
+  override def semanticTokensFullDelta(params: SemanticTokensDeltaParams): CompletableFuture[JEither[SemanticTokens, SemanticTokensDelta]] = computeAsync { cancelToken =>
+    logMessage("semanticTokensFullDelta")
+    null
+  }
 
-  override def semanticTokensFull(params: SemanticTokensParams): CompletableFuture[SemanticTokens] = super.semanticTokensFull(params)
+  override def semanticTokensRange(params: SemanticTokensRangeParams): CompletableFuture[SemanticTokens] = computeAsync { cancelToken =>
+    logMessage("semanticTokensRange")
+    null
+  }
 
-  override def semanticTokensFullDelta(params: SemanticTokensDeltaParams): CompletableFuture[JEither[SemanticTokens, SemanticTokensDelta]] = super.semanticTokensFullDelta(params)
+  override def moniker(params: MonikerParams): CompletableFuture[util.List[Moniker]] = computeAsync { cancelToken =>
+    logMessage("moniker")
+    null
+  }
 
-  override def semanticTokensRange(params: SemanticTokensRangeParams): CompletableFuture[SemanticTokens] = super.semanticTokensRange(params)
+  override def inlayHint(params: InlayHintParams): CompletableFuture[util.List[InlayHint]] = computeAsync { cancelToken =>
+    logMessage("inlayHint")
+    null
+  }
 
-  override def moniker(params: MonikerParams): CompletableFuture[util.List[Moniker]] = super.moniker(params)
+  override def inlineValue(params: InlineValueParams): CompletableFuture[util.List[InlineValue]] = computeAsync { cancelToken =>
+    logMessage("inlineValue")
+    null
+  }
 
-  override def inlayHint(params: InlayHintParams): CompletableFuture[util.List[InlayHint]] = super.inlayHint(params)
-
-  override def inlineValue(params: InlineValueParams): CompletableFuture[util.List[InlineValue]] = super.inlineValue(params)
-
-  override def diagnostic(params: DocumentDiagnosticParams): CompletableFuture[DocumentDiagnosticReport] = super.diagnostic(params)
+  override def diagnostic(params: DocumentDiagnosticParams): CompletableFuture[DocumentDiagnosticReport] = computeAsync { cancelToken =>
+    logMessage("diagnostic")
+    null
+  }
 }
