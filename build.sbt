@@ -11,5 +11,7 @@ lazy val root = (project in file("."))
 libraryDependencies ++= Seq(
   "org.eclipse.lsp4j" % "org.eclipse.lsp4j" % "0.20.1",
   "org.eclipse.lsp4j" % "org.eclipse.lsp4j.debug" % "0.20.1",
-  "Rc-lang" % "rc-lang_3" % "0.1.0-SNAPSHOT"
+  "Rc-lang" % "rc-lang_3" % "0.1.0-SNAPSHOT",
+  "com.google.protobuf" % "protobuf-java" % "3.23.3",
+  "org.scala-lang.modules" %% "scala-java8-compat" % "1.0.2",
 )

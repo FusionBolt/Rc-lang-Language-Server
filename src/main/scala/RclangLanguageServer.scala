@@ -11,8 +11,10 @@ import java.util
 import scala.concurrent.Future
 import scala.concurrent.Promise
 import java.util.concurrent.CompletableFuture
+import scala.compat.java8.FutureConverters
 import concurrent.ExecutionContext.Implicits.global
 import collection.JavaConverters.seqAsJavaListConverter
+import scala.util.{Failure, Success}
 
 // https://javadoc.io/doc/org.eclipse.lsp4j/org.eclipse.lsp4j/latest/index.html
 // https://javadoc.io/static/org.eclipse.lsp4j/org.eclipse.lsp4j/0.21.0/org/eclipse/lsp4j/services/TextDocumentService.html
@@ -64,12 +66,22 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
       /* triggerCharacters = */ List("(").asJava))
 
     c.setCallHierarchyProvider(true)
-    c.setCodeActionProvider(true)
+
+//    c.setCodeActionProvider(true)
+    c.setCodeActionProvider(new CodeActionOptions(
+      List(
+        CodeActionKind.QuickFix,
+        CodeActionKind.Refactor,
+      ).asJava));
+
+    // SetMatches
+
     c.setCodeLensProvider(new CodeLensOptions(false))
 
     c.setDeclarationProvider(true)
 //    c.setDiagnosticProvider(new DiagnosticRegistrationOptions(false, true))
     c.setDocumentFormattingProvider(true)
+    // CodeAction的id也可以加到这里
     c.setExecuteCommandProvider(new ExecuteCommandOptions(ServerCommands.allIds.toList.asJava))
     c.setImplementationProvider(true)
     c.setInlayHintProvider(true)
@@ -89,7 +101,8 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
     // from this method and thus let the client know our capabilities.
     //    CompletableFuture.supplyAsync(() => drivers)
 
-    new InitializeResult(c)
+    val serverInfo = new ServerInfo("rc-lang", "0.0.1")
+    new InitializeResult(c, serverInfo)
   }
 
   override def shutdown(): CompletableFuture[Object] = {
@@ -265,10 +278,25 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
 
   override def executeCommand(params: ExecuteCommandParams): CompletableFuture[AnyRef] = computeAsync { cancelToken =>
     logMessage("executeCommand")
+    logMessage(params.toString)
     params match
-      case ServerCommands.RCC() => logMessage("rcc")
-      case _ => logMessage("unknown command")
-    null
+      case ServerCommands.RCC(args) => {
+        logMessage("rcc")
+        logMessage(args.mkString("\n"))
+        args(0) match
+          case Some(value) => {
+            build(value.fsPath, client)
+            client.showMessage(new MessageParams(MessageType.Info, "build success"))
+          }
+          case None => logMessage("error")
+      }
+      case ServerCommands.Run() => {
+        logMessage("debugger")
+      }
+      case _ => {
+        logMessage("unknown command")
+      }
+      null
   }
 
   // fix or refactor, e.g. alt + enter

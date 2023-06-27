@@ -1,11 +1,13 @@
 import rclang.lexer.Lexer
 import rclang.parser.RcParser
 import rclang.ast.*
+import rclang.compiler
 
 import java.io.File
 import java.net.URI
 import rclang.tools.{DumpManager, GlobalTable, unwrap}
 import org.eclipse.lsp4j.*
+import org.eclipse.lsp4j.services.{LanguageClient}
 import rclang.ast.Expr.Self
 
 import scala.collection.immutable
@@ -18,6 +20,12 @@ def driver(uri: String) = {
   // 2. parse and return ast
   val ast = RcParser(Lexer(src).unwrap).unwrap
   ast
+}
+
+def build(uri: String, client: LanguageClient) = {
+  client.logTrace(new LogTraceParams("build", s"build $uri"))
+  DumpManager.setDumpRoot("/Users/homura/Code/Rc-lang-Language-Server/tmp")
+  compiler.Driver(compiler.CompileOption(List(uri), "/Users/homura/Code/Rc-lang-Language-Server/a.out"))
 }
 
 def symbolTable(uri: String): GlobalTable = {

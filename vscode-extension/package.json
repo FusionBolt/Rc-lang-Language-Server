@@ -10,14 +10,24 @@
     "Other"
   ],
   "activationEvents": [
-		"onLanguage:plaintext"
+		"onLanguage:plaintext",
+    "onDebugResolve:plaintext"
 	],
   "main": "./out/extension.js",
   "contributes": {
 		"configuration": {
-			"type": "object",
-			"title": "Example configuration",
+			"type": "Rclang",
+			"title": "Rclang configuration",
 			"properties": {
+        "rclang.LSPVersion": {
+            "type": "string",
+            "default": "0.0.1",
+            "markdownDescription": "The version of Rclang LSP"
+        },
+        "rclang.enableFullFeature": {
+          "type": "boolean",
+          "default": true
+        },
 				"languageServerExample.maxNumberOfProblems": {
 					"scope": "resource",
 					"type": "number",
@@ -37,12 +47,201 @@
 				}
 			}
 		},
+    "menus": {
+      "editor/title": [
+        {
+          "command": "rclang.rcc",
+          "group": "navigation"
+        },
+        {
+          "command": "rclang.run",
+          "group": "navigation"
+        },
+        {
+          "command": "rclang.analysis",
+          "group": "navigation"
+        }
+      ]
+    },
     "commands": [
       {
-        "command": "rcc",
-        "title": "rclang build"
+        "command": "rclang.rcc",
+        "title": "rclang build",
+        "icon": "$(github)",
+        "category": "rclang"
+      },
+      {
+        "command": "rclang.run",
+        "title": "rclang run",
+        "icon": "$(twitter)",
+        "category": "rclang"
+      },
+      {
+        "command": "rclang.analysis",
+        "title": "rclang analysis",
+        "icon": "$(star)",
+        "category": "rclang"
       }
-    ]
+    ],
+    "debuggers": [
+      {
+        "type": "rc-lang",
+        "label": "rc-lang Debugger",
+        "languages": [
+          "rc-lang"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "properties": {
+              "mainClass": {
+                "type": "string",
+                "description": "Name of the main class to run"
+              },
+              "testClass": {
+                "type": "string",
+                "description": "Name of the test class to run"
+              },
+              "buildTarget": {
+                "type": "string",
+                "description": "Name of the build target of the class to run, can be found in the projects section of the Metals tab"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Arguments passed to the class to run",
+                "default": []
+              },
+              "jvmOptions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": []
+              },
+              "env": {
+                "type": "object",
+                "items": {
+                  "type": "string"
+                },
+                "default": {}
+              },
+              "envFile": {
+                "type": "string",
+                "description": "Name of a .env file with additional environment variables",
+                "default": null
+              }
+            }
+          },
+          "attach": {
+            "properties": {
+              "buildTarget": {
+                "type": "string",
+                "description": "Name of the build target to debug"
+              },
+              "hostName": {
+                "type": "string",
+                "description": "Host name of the debuggee JVM"
+              },
+              "port": {
+                "type": "number",
+                "description": "Port to attach to"
+              }
+            }
+          }
+        },
+        "configurationSnippets": [
+          {
+            "label": "Rc-lang: Run main class",
+            "description": "A new configuration for running a debug session of a main class",
+            "body": {
+              "type": "rc-lang",
+              "request": "launch",
+              "name": "Untitled",
+              "mainClass": "???",
+              "args": [],
+              "jvmOptions": [],
+              "env": {}
+            }
+          },
+          {
+            "label": "Rc-lang: Run test class",
+            "description": "A new configuration for running a debug session of a test class",
+            "body": {
+              "type": "rc-lang",
+              "request": "launch",
+              "name": "Untitled",
+              "testClass": "???"
+            }
+          },
+          {
+            "label": "Rc-lang: Attach debugger",
+            "description": "A new configuration for running a debug session of a remote JVM",
+            "body": {
+              "type": "rc-lang",
+              "request": "attach",
+              "name": "Untitled",
+              "buildTarget": "???",
+              "hostName": "localhost",
+              "port": 5005
+            }
+          },
+          {
+            "label": "Rc-lang: Play framework prod server",
+            "description": "A new configuration for running a production Play framework production server",
+            "body": {
+              "type": "rc-lang",
+              "request": "launch",
+              "name": "Play main",
+              "mainClass": "play.core.server.ProdServerStart",
+              "args": [],
+              "jvmOptions": [],
+              "buildTarget": "???"
+            }
+          }
+        ]
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "rclang-explorer",
+          "title": "new Title",
+          "icon": "icons/book.svg"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "rclangpackages",
+        "contents": "No rclang project found. Create a new one or start Metals manually.\n[New Rclang Project](command:rclang.new-rclang-project)\n[Start Rclang](command:rclang.start-server)",
+        "when": "!metals:enabled || workbenchState != empty"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "rclangViews",
+          "name": "Views Test",
+          "contextualTitle": "Package Explorer"
+        }
+      ],
+      "rclang-explorer": [
+        {
+          "id": "rclangpackages",
+          "name": "packages"
+        },
+        {
+          "id": "build-commands",
+          "name": "Build Commands"
+        },
+        {
+          "id": "help-and-feed-back",
+          "name": "Help And Feedback"
+        }
+      ]
+    }
 	},
   "scripts": {
     "vscode:prepublish": "npm run compile",
@@ -64,6 +263,7 @@
     "mocha": "^10.2.0",
     "typescript": "^4.9.5",
     "@vscode/test-electron": "^2.3.0",
-    "vscode-languageclient": "^8.1.0"
-  }
+    "vscode-languageclient": "^8.1.0",
+    "@vscode/debugadapter": "^1.56.0",
+    "@vscode/debugadapter-testsupport": "^1.56.0"  }
 }

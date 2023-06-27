@@ -11,8 +11,8 @@ import java.io.*
   val systemOut = System.out
   val exec = Executors.newCachedThreadPool()
   val printer = new PrintWriter(new FileOutputStream(s"/Users/homura/Code/Rc-lang-Language-Server/pc.stdout.log"))
-  val server = new RclangLanguageServer(
-  )
+  val server = new RclangLanguageServer()
+  
   try {
     val launcher = new Launcher.Builder[LanguageClient]()
       .traceMessages(printer)
