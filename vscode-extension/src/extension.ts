@@ -1,6 +1,8 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import { Console } from 'console';
+import { subscribe } from 'diagnostics_channel';
+import { stat } from 'fs';
 import * as vscode from 'vscode';
 import { workspace, ExtensionContext, window } from 'vscode';
 import {
@@ -23,44 +25,15 @@ import {
 
 let client: LanguageClient;
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
-export function activate(context: vscode.ExtensionContext) {
-    // Use the console to output diagnostic information (console.log) and errors (console.error)
-    // This line of code will only be executed once when your extension is activated
-    console.log('Congratulations, your extension "rc-lang" is now active!');
-    // The debug options for the server
-    const debugOptions = [
-        '-Xdebug',
-        '-Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=8000,quiet=y'
-    ];
-    let args = ['-jar', '/Users/homura/Code/Rc-lang-Language-Server/target/scala-3.1.0/Rc-lang-Language-Server-assembly-0.1.0-SNAPSHOT.jar'];
-    let cmd = '/Users/homura/Library/Java/JavaVirtualMachines/openjdk-17.0.2/Contents/Home/bin/java';
-	
-    // If the extension is launched in debug mode then the debug server options are used
-    // Otherwise the run options are used
-    const serverOptions = {
-        run: { command: cmd, args: args },
-        debug: { command: cmd, args: args }
-    };
-	const clientOptions: LanguageClientOptions = {
-		documentSelector: ['rc-lang'],
-		synchronize: {
-			fileEvents: workspace.createFileSystemWatcher('**/*.semanticdb')
-		},
-		
-	};
+function initStatusBar() {
+	let statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+	statusBarItem.text = "RclangStatusBar"
+	statusBarItem.show()
+	// context.subscriptions.push(statusBarItem)
+	// context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor())
+}
 
-	// // The command has been defined in the package.json file
-	// // Now provide the implementation of the command with registerCommand
-	// // The commandId parameter must match the command field in package.json
-	// let disposable = vscode.commands.registerCommand('rc-lang.helloWorld', () => {
-	// 	// The code you place here will be executed every time your command is executed
-	// 	// Display a message box to the user
-	// 	vscode.window.showInformationMessage('Hello World from Rc-lang!');
-
-	// });
-
+function debuggerRegister(context: vscode.ExtensionContext) {
 	function registerCommand(
 		command: string,
 		callback: (...args: any[]) => unknown
@@ -69,13 +42,6 @@ export function activate(context: vscode.ExtensionContext) {
 		context.subscriptions.push(commands.registerCommand(command, callback));
 	  }
 
-	client = new LanguageClient(
-		'rclang',
-		'rclang',
-		serverOptions,
-		clientOptions
-	);
-	console.log("init client")
 	var type = "rc-lang"
 	vscode.debug.registerDebugConfigurationProvider(
 		type, 
@@ -111,16 +77,47 @@ export function activate(context: vscode.ExtensionContext) {
 			});
 		}
 		);
+}
 
+function getServerOptions() {
+	const debugOptions = [
+        '-Xdebug',
+        '-Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=8000,quiet=y'
+    ];
+    let args = ['-jar', '/Users/homura/Code/Rc-lang-Language-Server/target/scala-3.1.0/Rc-lang-Language-Server-assembly-0.1.0-SNAPSHOT.jar'];
+    let cmd = '/Users/homura/Library/Java/JavaVirtualMachines/openjdk-17.0.2/Contents/Home/bin/java';
+	
+    // If the extension is launched in debug mode then the debug server options are used
+    // Otherwise the run options are used
+    const serverOptions = {
+        run: { command: cmd, args: args },
+        debug: { command: cmd, args: args }
+    };
+	return serverOptions
+}
+
+function getClientOptions() {
+	const clientOptions: LanguageClientOptions = {
+		documentSelector: ['rc-lang'],
+		synchronize: {
+			fileEvents: workspace.createFileSystemWatcher('**/*.semanticdb')
+		},
+		
+	};
+	return clientOptions
+}
+
+export function activate(context: vscode.ExtensionContext) {
+	initStatusBar()
+	debuggerRegister(context)
+	client = new LanguageClient(
+		'rclang',
+		'rclang',
+		getServerOptions(),
+		getClientOptions()
+	);
 	client.start()
-
-	// context.subscriptions.push(client.start());
-
-	// rcDebugger
-	// .initialize(outputChannel)
-	// .forEach(disposable => context.subscriptions.push(disposable));
-	// registerCommand(rcDebugger.startSessionCommand, rcDebugger.start)
-
+	console.log("client start")
 }
 
 export interface DebugDiscoveryParams {
