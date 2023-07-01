@@ -42,6 +42,45 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
       }
     })
 
+  val TokenTypes: List[String] = List(
+    SemanticTokenTypes.Namespace,
+    SemanticTokenTypes.Type,
+    SemanticTokenTypes.Class,
+    SemanticTokenTypes.Enum,
+    SemanticTokenTypes.Interface,
+    SemanticTokenTypes.Struct,
+    SemanticTokenTypes.TypeParameter,
+    SemanticTokenTypes.Parameter,
+    SemanticTokenTypes.Variable,
+    SemanticTokenTypes.Property,
+    SemanticTokenTypes.EnumMember,
+    SemanticTokenTypes.Event,
+    SemanticTokenTypes.Function,
+    SemanticTokenTypes.Method,
+    SemanticTokenTypes.Macro,
+    SemanticTokenTypes.Keyword,
+    SemanticTokenTypes.Modifier,
+    SemanticTokenTypes.Comment,
+    SemanticTokenTypes.String,
+    SemanticTokenTypes.Number,
+    SemanticTokenTypes.Regexp,
+    SemanticTokenTypes.Operator,
+    SemanticTokenTypes.Decorator
+  )
+
+  val TokenModifiers: List[String] = List(
+    SemanticTokenModifiers.Declaration,
+    SemanticTokenModifiers.Definition,
+    SemanticTokenModifiers.Readonly,
+    SemanticTokenModifiers.Static,
+    SemanticTokenModifiers.Deprecated,
+    SemanticTokenModifiers.Abstract,
+    SemanticTokenModifiers.Async,
+    SemanticTokenModifiers.Modification,
+    SemanticTokenModifiers.Documentation,
+    SemanticTokenModifiers.DefaultLibrary
+  )
+
   override def initialize(params: InitializeParams): CompletableFuture[InitializeResult] = computeAsync { cancelToken =>
     rootUri = params.getRootUri
     assert(rootUri != null)
@@ -85,11 +124,22 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
     c.setExecuteCommandProvider(new ExecuteCommandOptions(ServerCommands.allIds.toList.asJava))
     c.setImplementationProvider(true)
     c.setInlayHintProvider(true)
-    c.setInlineValueProvider(true)
+
     c.setLinkedEditingRangeProvider(true)
-    c.setMonikerProvider(true)
     c.setReferencesProvider(true)
-    c.setSemanticTokensProvider(new SemanticTokensWithRegistrationOptions(new SemanticTokensLegend(), false))
+    c.setMonikerProvider(true)
+    c.setInlineValueProvider(true)
+
+
+    val semanticTokensOption = new SemanticTokensWithRegistrationOptions(new SemanticTokensLegend(), false)
+    semanticTokensOption.setFull(true)
+    semanticTokensOption.setRange(false)
+    semanticTokensOption.setLegend(new SemanticTokensLegend(
+      this.TokenTypes.asJava,
+      this.TokenModifiers.asJava
+    ))
+    c.setSemanticTokensProvider(semanticTokensOption)
+
 //    c.setTextDocumentSync(true)
     c.setTypeDefinitionProvider(true)
     c.setTypeHierarchyProvider(true)
@@ -132,7 +182,6 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
   override def didClose(params: DidCloseTextDocumentParams): Unit = {}
 
   override def didSave(params: DidSaveTextDocumentParams): Unit = {}
-
 
   override def documentSymbol(params: DocumentSymbolParams) = computeAsync { cancelToken =>
     val uri = params.getTextDocument.getUri
@@ -181,44 +230,20 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
     JEither.forRight(new CompletionList(false, items.asJava))
   }
 
-
-  override def documentHighlight(params: DocumentHighlightParams): CompletableFuture[util.List[_ <: DocumentHighlight]] = computeAsync { cancelToken =>
-    // 单击到某个位置会触发
-    logMessage("highlight")
-    val uri = params.getTextDocument.getUri
-    val ast = driver(uri)
-    val list = getNode(ast, params.getPosition)
-    if(list.isEmpty) {
-      Nil.asJava
-    } else {
-      val x = list.minBy(_.priority)
-      List(new DocumentHighlight(x.getPositionRange, DocumentHighlightKind.Text)).asJava
-    }
-  }
-
   override def hover(params: HoverParams): CompletableFuture[Hover] = computeAsync { cancelToken =>
     val uri = params.getTextDocument.getUri
     val ast = driver(uri)
 
     logMessage(f"hover: ${params.getPosition}");
-    // get Position
-    // get ast node on position
-    // show content about ast node
-    val list = getNode(ast, params.getPosition)
-    logMessage(list.map(_.toString).mkString("\n\n"))
-    if list.isEmpty then {
-      new Hover(new MarkupContent("plaintext", "not found"))
-    }
-    else {
-      // sort and get the minimal one
-      val x = list.maxBy(_.priority)
-      val str = x match
-        case klass: rclang.ast.Class => s"class ${klass.name.str}"
-        case method: rclang.ast.Method => s"method ${method.name.str}"
-        case _ => s"${x.getClass.getSimpleName}: ${x.toString}"
-      val content = new MarkupContent("plaintext", str)
-      new Hover(content)
-    }
+    val str = getPositionNode(ast, params.getPosition) match
+      case Some(value) => {
+        value match
+          case klass: rclang.ast.Class => s"class ${klass.name.str}"
+          case method: rclang.ast.Method => s"method ${method.name.str}"
+          case _ => s"${value.getClass.getSimpleName}: ${value.toString}"
+      }
+      case None => "not found"
+    new Hover(new MarkupContent("plaintext", str))
   }
 
   private def logMessage(message: String): Unit = {
@@ -227,17 +252,20 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
 
   // go to definition的时候reference也会一起触发
   override def definition(params: DefinitionParams): CompletableFuture[JEither[util.List[_ <: Location], util.List[_ <: LocationLink]]] = computeAsync { cancelToken =>
+    logMessage("definition")
     val uri = params.getTextDocument.getUri
     val ast = driver(uri)
-    val locations = ast.items.flatMap {
-      case m@Method(decl, body) => List(new Location(uri, m.getPositionRange))
-      case _ => Nil
-    }
-    logMessage("definition")
-    JEither.forLeft(locations.asJava)
+//    getPositionNode(ast, params.getPosition) match
+//      case Some(value) => {
+//        findDef(value, symbolTable(ast))
+//        JEither.forLeft(List(new Location(uri, m.getPositionRange)))
+//      }
+//      case None => JEither.forLeft(Nil.asJava)
+    JEither.forLeft(Nil.asJava)
   }
 
   override def references(params: ReferenceParams): CompletableFuture[util.List[_ <: Location]] = computeAsync { cancelToken =>
+    logMessage("references")
     val uri = params.getTextDocument.getUri
     val ast = driver(uri)
     val locations = ast.items.flatMap {
@@ -248,10 +276,25 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
     locations.asJava
   }
 
+  override def typeDefinition(params: TypeDefinitionParams): CompletableFuture[JEither[util.List[_ <: Location], util.List[_ <: LocationLink]]] = computeAsync { cancelToken =>
+    logMessage("typeDefinition")
+    null
+  }
+
+  override def declaration(params: DeclarationParams): CompletableFuture[JEither[util.List[_ <: Location], util.List[_ <: LocationLink]]] = computeAsync { cancelToken =>
+    logMessage("declaration")
+    null
+  }
+
+  override def implementation(params: ImplementationParams): CompletableFuture[JEither[util.List[_ <: Location], util.List[_ <: LocationLink]]] = computeAsync { cancelToken =>
+    logMessage("implementation")
+    null
+  }
+
   // 输入完新的名字以后会触发
   override def rename(params: RenameParams): CompletableFuture[WorkspaceEdit] = computeAsync { cancelToken =>
-    val uri = params.getTextDocument.getUri
     logMessage("rename")
+    val uri = params.getTextDocument.getUri
     new WorkspaceEdit()
   }
 
@@ -264,16 +307,6 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
     }
     logMessage("signatureHelp")
     new SignatureHelp(signatureHelp.asJava, 1, 1)
-  }
-
-  override def symbol(params: WorkspaceSymbolParams): CompletableFuture[JEither[util.List[_ <: SymbolInformation], util.List[_ <: WorkspaceSymbol]]] = computeAsync { cancelToken =>
-//    val uri = params.getQuery
-//    val ast = driver(uri)
-//    val symbols = ast.items.flatMap {
-//      case m@Method(decl, body) => List(new SymbolInformation(m.toString, SymbolKind.Method, m.getPositionRange))
-//      case _ => Nil
-//    }
-    JEither.forLeft(Nil.asJava)
   }
 
   override def executeCommand(params: ExecuteCommandParams): CompletableFuture[AnyRef] = computeAsync { cancelToken =>
@@ -301,31 +334,23 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
 
   // fix or refactor, e.g. alt + enter
   override def codeAction(params: CodeActionParams): CompletableFuture[util.List[JEither[Command, CodeAction]]] = computeAsync { cancelToken =>
-    logMessage("colorPresentation")
-    null
+    logMessage("codeAction")
+    val fix = new CodeAction("CodeActionFix")
+    fix.setKind(CodeActionKind.QuickFix)
+    val refactor = new CodeAction("CodeActionRefactor")
+    refactor.setKind(CodeActionKind.Refactor)
+    List(fix, refactor).map(JEither.forRight).asJava
   }
 
   // A code lens represents a command that should be shown along with source text, like the number of references, a way to run tests, etc.
-  // 是不是类似于在上面显示一个[Run]一样的东西
   override def codeLens(params: CodeLensParams): CompletableFuture[util.List[_ <: CodeLens]] = computeAsync { cancelToken =>
-    logMessage("prepareCallHierarchy")
-    null
-  }
-
-  // A document link is a range in a text document that links to an internal or external resource, like another text document or a web site.
-  override def documentLink(params: DocumentLinkParams): CompletableFuture[util.List[DocumentLink]] = computeAsync { cancelToken =>
-    logMessage("callHierarchyIncomingCalls")
-    null
-  }
-
-  override def documentColor(params: DocumentColorParams): CompletableFuture[util.List[ColorInformation]] = computeAsync { cancelToken =>
-    logMessage("documentColor")
-    Nil.asJava
-  }
-
-  override def colorPresentation(params: ColorPresentationParams): CompletableFuture[util.List[ColorPresentation]] = computeAsync { cancelToken =>
-    logMessage("colorPresentation")
-    null
+    logMessage("codeLens")
+    val ast = driver(params.getTextDocument.getUri)
+    val table = symbolTable(ast)
+    table.kernel.methods.values.map(l => {
+      val method = l.astNode
+      new CodeLens(method.name.getPositionRange, new Command("Run", "rc.CodeLen"), null)
+    }).toList.asJava
   }
 
   override def prepareCallHierarchy(params: CallHierarchyPrepareParams): CompletableFuture[util.List[CallHierarchyItem]] = computeAsync { cancelToken =>
@@ -343,38 +368,91 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
     null
   }
 
+  override def inlayHint(params: InlayHintParams): CompletableFuture[util.List[InlayHint]] = computeAsync { cancelToken =>
+    logMessage("inlayHint")
+    List(
+      new InlayHint(params.getRange.getStart, JEither.forLeft("HintStart")),
+      new InlayHint(params.getRange.getEnd, JEither.forRight(List(
+        new InlayHintLabelPart("HintEnd1"),
+        new InlayHintLabelPart("HintEnd2"),
+      ).asJava))
+    ).asJava
+  }
+
+  override def documentHighlight(params: DocumentHighlightParams): CompletableFuture[util.List[_ <: DocumentHighlight]] = computeAsync { cancelToken =>
+    // 单击到某个位置会触发，比如说点到一个单词的位置，那么单词高亮
+    logMessage("highlight")
+    val uri = params.getTextDocument.getUri
+    val ast = driver(uri)
+    val list = getNode(ast, params.getPosition)
+    if (list.isEmpty) {
+      Nil.asJava
+    } else {
+      val x = list.minBy(_.priority)
+      List(new DocumentHighlight(x.getPositionRange, DocumentHighlightKind.Text)).asJava
+    }
+  }
+
+  override def diagnostic(params: DocumentDiagnosticParams): CompletableFuture[DocumentDiagnosticReport] = computeAsync { cancelToken =>
+    logMessage("diagnostic")
+    val fullReport = new RelatedFullDocumentDiagnosticReport(
+      List(
+        new Diagnostic(new Range(new Position(1, 1), new Position(1, 5)), "diagnosticMessage")
+      ).asJava)
+//    val unchanged = new RelatedUnchangedDocumentDiagnosticReport("ResultId")
+    new DocumentDiagnosticReport(fullReport)
+  }
+
+  // return type maybe lost some information
   override def semanticTokensFull(params: SemanticTokensParams): CompletableFuture[SemanticTokens] = computeAsync { cancelToken =>
     logMessage("semanticTokensFull")
+    new SemanticTokens(List(new Integer(3), new Integer(3), new Integer(3)).asJava)
+  }
+
+
+  // 不知如何触发
+  // A document link is a range in a text document that links to an internal or external resource, like another text document or a web site.
+  override def documentLink(params: DocumentLinkParams): CompletableFuture[util.List[DocumentLink]] = computeAsync { cancelToken =>
+    logMessage("documentLink")
     null
   }
 
-  override def semanticTokensFullDelta(params: SemanticTokensDeltaParams): CompletableFuture[JEither[SemanticTokens, SemanticTokensDelta]] = computeAsync { cancelToken =>
-    logMessage("semanticTokensFullDelta")
-    null
-  }
 
-  override def semanticTokensRange(params: SemanticTokensRangeParams): CompletableFuture[SemanticTokens] = computeAsync { cancelToken =>
-    logMessage("semanticTokensRange")
-    null
-  }
+  // color decorators https://code.visualstudio.com/api/language-extensions/programmatic-language-features#show-color-decorators
+  // capabilities.setColorProvider(true)
+//  override def colorPresentation(params: ColorPresentationParams): CompletableFuture[util.List[ColorPresentation]] = computeAsync { cancelToken =>
+//    logMessage("colorPresentation")
+//    List(new ColorPresentation("colorPresentation")).asJava
+//  }
+//  override def documentColor(params: DocumentColorParams): CompletableFuture[util.List[ColorInformation]] = computeAsync { cancelToken =>
+//    logMessage("documentColor")
+//    null
+//  }
+
 
   override def moniker(params: MonikerParams): CompletableFuture[util.List[Moniker]] = computeAsync { cancelToken =>
     logMessage("moniker")
     null
   }
 
-  override def inlayHint(params: InlayHintParams): CompletableFuture[util.List[InlayHint]] = computeAsync { cancelToken =>
-    logMessage("inlayHint")
-    null
+  override def symbol(params: WorkspaceSymbolParams): CompletableFuture[JEither[util.List[_ <: SymbolInformation], util.List[_ <: WorkspaceSymbol]]] = computeAsync { cancelToken =>
+    logMessage("Symbol")
+    val uri = params.getQuery
+    val ast = driver(uri)
+    val symbols = ast.items.flatMap {
+      case m@Method(decl, body) => List(new SymbolInformation(m.toString, SymbolKind.Method, new Location(uri, m.getPositionRange)))
+      case _ => Nil
+    }
+    JEither.forLeft(Nil.asJava)
   }
 
-  override def inlineValue(params: InlineValueParams): CompletableFuture[util.List[InlineValue]] = computeAsync { cancelToken =>
-    logMessage("inlineValue")
-    null
-  }
-
-  override def diagnostic(params: DocumentDiagnosticParams): CompletableFuture[DocumentDiagnosticReport] = computeAsync { cancelToken =>
-    logMessage("diagnostic")
-    null
-  }
+//  // used for debugger, like inlayHint End, should enable in settings
+//  override def inlineValue(params: InlineValueParams): CompletableFuture[util.List[InlineValue]] = computeAsync { cancelToken =>
+//    logMessage("inlineValue")
+//    List(
+//      new InlineValue(new InlineValueText(params.getRange, "inlineValue")),
+//      new InlineValue(new InlineValueVariableLookup(params.getRange, false, "VarName")),
+//      new InlineValue(new InlineValueEvaluatableExpression(params.getRange, "inlineValueExpr"))
+//    ).asJava
+//  }
 }

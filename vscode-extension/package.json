@@ -47,7 +47,17 @@
 				}
 			}
 		},
+    "configurationDefaults": {
+      "[rc-lang]": {
+        "editor.semanticHighlighting.enabled": true
+      }
+    },
     "menus": {
+      "file/newFile": [
+        {
+          "command": "rclang.newFile"
+        }
+      ],
       "editor/title": [
         {
           "command": "rclang.rcc",
@@ -80,6 +90,11 @@
         "command": "rclang.analysis",
         "title": "rclang analysis",
         "icon": "$(star)",
+        "category": "rclang"
+      },
+      {
+        "command": "rclang.newFile",
+        "title": "create a new rc file",
         "category": "rclang"
       }
     ],
@@ -206,9 +221,16 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "rclang-explorer",
+          "id": "rclang-sidebar-explorer",
           "title": "new Title",
           "icon": "icons/book.svg"
+        }
+      ],
+      "panel": [
+        {
+          "id": "rclang-panel-explorer",
+          "title": "Rclang Panel Explorer",
+          "icon": "$(twitter)"
         }
       ]
     },
@@ -224,10 +246,10 @@
         {
           "id": "rclangViews",
           "name": "Views Test",
-          "contextualTitle": "Package Explorer"
+          "contextualTitle": "Explorer Package Explorer"
         }
       ],
-      "rclang-explorer": [
+      "rclang-sidebar-explorer": [
         {
           "id": "rclangpackages",
           "name": "packages"
@@ -239,6 +261,12 @@
         {
           "id": "help-and-feed-back",
           "name": "Help And Feedback"
+        }
+      ],
+      "rclang-panel-explorer": [
+        {
+          "id": "rclangPanelExplorer",
+          "name": "Rc Panel Explorer"
         }
       ]
     }
