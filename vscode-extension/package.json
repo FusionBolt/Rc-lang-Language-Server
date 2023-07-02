@@ -238,14 +238,14 @@
       {
         "view": "rclangpackages",
         "contents": "No rclang project found. Create a new one or start Metals manually.\n[New Rclang Project](command:rclang.new-rclang-project)\n[Start Rclang](command:rclang.start-server)",
-        "when": "!metals:enabled || workbenchState != empty"
+        "when": "!rclang:enabled || workbenchState != empty"
       }
     ],
     "views": {
       "explorer": [
         {
-          "id": "rclangViews",
-          "name": "Views Test",
+          "id": "rclangASTViews",
+          "name": "Show AST",
           "contextualTitle": "Explorer Package Explorer"
         }
       ],

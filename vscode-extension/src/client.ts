@@ -40,12 +40,20 @@ function getServerOptions() {
 	return serverOptions
 }
 
+export interface RcInitializationOptions {
+    treeViewProvider: true,
+}
+
 function getClientOptions() {
+    const options: RcInitializationOptions = {
+        treeViewProvider: true
+    }
 	const clientOptions: LanguageClientOptions = {
 		documentSelector: ['rc-lang'],
 		synchronize: {
 			fileEvents: workspace.createFileSystemWatcher('**/*.semanticdb')
 		},
+        initializationOptions: options
 		
 	};
 	return clientOptions

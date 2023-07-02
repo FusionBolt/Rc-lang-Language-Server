@@ -15,10 +15,11 @@ import scala.compat.java8.FutureConverters
 import concurrent.ExecutionContext.Implicits.global
 import collection.JavaConverters.seqAsJavaListConverter
 import scala.util.{Failure, Success}
+import scala.meta.internal.tvp.*
 
 // https://javadoc.io/doc/org.eclipse.lsp4j/org.eclipse.lsp4j/latest/index.html
 // https://javadoc.io/static/org.eclipse.lsp4j/org.eclipse.lsp4j/0.21.0/org/eclipse/lsp4j/services/TextDocumentService.html
-class RclangLanguageServer extends LanguageServer with WorkspaceService with TextDocumentService with LanguageClientAware {
+class RclangLanguageServer extends LanguageServer with WorkspaceService with TextDocumentService with RcService with LanguageClientAware {
   thisServer =>
   var client: LanguageClient = _
   var rootUri: String = _
@@ -410,6 +411,40 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
   }
 
 
+  override def treeViewChildren(
+                                 params: TreeViewChildrenParams
+                               ): CompletableFuture[RcTreeViewChildrenResult] = {
+    logMessage("treeViewChildren")
+    null
+  }
+
+  override def treeViewParent(
+                               params: TreeViewParentParams
+                             ): CompletableFuture[TreeViewParentResult] = {
+    logMessage("treeViewParent")
+    null
+  }
+
+  override def treeViewVisibilityDidChange(
+                                            params: TreeViewVisibilityDidChangeParams
+                                          ): CompletableFuture[Unit] = computeAsync { cancelToken =>
+    logMessage("treeViewVisibilityDidChange")
+  }
+
+
+  override def treeViewNodeCollapseDidChange(
+                                              params: TreeViewNodeCollapseDidChangeParams
+                                            ): CompletableFuture[Unit] = computeAsync { cancelToken =>
+    logMessage("treeViewNodeCollapseDidChange")
+  }
+  
+  override def treeViewReveal(
+                               params: TextDocumentPositionParams
+                             ): CompletableFuture[TreeViewNodeRevealResult] = computeAsync { cancelToken =>
+    logMessage("treeViewReveal")
+    null
+  }
+  
   // 不知如何触发
   // A document link is a range in a text document that links to an internal or external resource, like another text document or a web site.
   override def documentLink(params: DocumentLinkParams): CompletableFuture[util.List[DocumentLink]] = computeAsync { cancelToken =>

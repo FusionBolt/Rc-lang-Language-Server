@@ -14,12 +14,12 @@ import java.io.*
   val server = new RclangLanguageServer()
   
   try {
-    val launcher = new Launcher.Builder[LanguageClient]()
+    val launcher = new Launcher.Builder[RcLanguageClient]()
       .traceMessages(printer)
       .setExecutorService(exec)
       .setInput(systemIn)
       .setOutput(systemOut)
-      .setRemoteInterface(classOf[LanguageClient])
+      .setRemoteInterface(classOf[RcLanguageClient])
       .setLocalService(server)
       .create()
     val clientProxy = launcher.getRemoteProxy
