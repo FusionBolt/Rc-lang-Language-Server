@@ -1,5 +1,5 @@
 import org.eclipse.lsp4j.ExecuteCommandParams
-import org.eclipse.lsp4j
+import org.eclipse.lsp4j.*
 
 import collection.JavaConverters.seqAsJavaListConverter
 import collection.JavaConverters.asScalaBufferConverter
@@ -92,16 +92,44 @@ final case class DiscoverTestParams(@Nullable mid: Int = 0,
                                    @Nullable path: String = null,
                                    @Nullable scheme: String = null)
 
+final case class GotoParams(@Nullable str: String = null) {
+  def position = {
+    "<.*>".r.findFirstIn(str).map(value => {
+        val position = value.slice(1, value.length - 1).split(", ").map(_.split(":")).head.map(_.toInt)
+        new Position(position(0), position(1))
+      })
+  }
+}
+
+case class WindowLocation(
+                           uri: String,
+                           range: Range,
+                           otherWindow: Boolean = false,
+                         ) {
+  def toExecuteCommandParams = {
+    new ExecuteCommandParams(
+      ServerCommands.GoTo.cmd,
+      List[Object](
+        this.toJson
+      ).asJava,
+    )
+  }
+}
+
 object ServerCommands {
   val RCC = ListParametrizedCommand[DiscoverTestParams](
     "rclang.rcc",
     "Request Client Connection",
     "desc", "args")
-  val Run = Command("rclang.run", "Request Client Connection")
+  val Run = Command("rclang.run", "Run Rc-lang")
 
+  val GoTo = ListParametrizedCommand[String](
+    "rclang.goto",
+    "GoTo Position",
+    "goto", "sdd")
 //  val Debugger = ParametrizedCommand[DebugSessionParams]("debug-adapter-start", "Start Debugger")
 
-  val all = List(RCC, Run)
+  val all = List(RCC, Run, GoTo)
 
   val allIds = all.map(_.cmd).toSet
 }

@@ -1,4 +1,4 @@
-import { CancellationToken, Disposable, Event, EventEmitter, ExtensionContext, OutputChannel, ProviderResult, TreeDataProvider, TreeItem, TreeView, window } from "vscode";
+import { CancellationToken, Disposable, Event, EventEmitter, ExtensionContext, OutputChannel, ProviderResult, TreeDataProvider, TreeItem, TreeItemCollapsibleState, TreeView, window } from "vscode";
 import { LanguageClient } from "vscode-languageclient/node";
 import { RcTreeViewChildren, RcTreeViewDidChange, RcTreeViewNode, RcTreeViewNodeCollapseDidChange, RcTreeViewParent, RcTreeViewVisibilityDidChange, RcTreeViews } from "./TreeViewProtocol";
 
@@ -64,7 +64,7 @@ export function startTreeView(client: LanguageClient, context: ExtensionContext,
 function notEmpty<TValue>(value: TValue | null | undefined): value is TValue {
     return value !== null && value !== undefined;
   }
-  
+
 class RcTreeDataProvider implements TreeDataProvider<string> {
     didChange = new EventEmitter<string | undefined>();
     onDidChangeTreeData = this.didChange.event;
@@ -77,7 +77,9 @@ class RcTreeDataProvider implements TreeDataProvider<string> {
       ) {}
 
     getTreeItem(element: string): TreeItem | Thenable<TreeItem> {
-        return new TreeItem("label")
+        console.log("getTreeItem")
+        console.log(element)
+        return new TreeItem(element, TreeItemCollapsibleState.Collapsed)
     }
     getChildren(uri?: string | undefined): ProviderResult<string[] | undefined> {
         return this.client.sendRequest(RcTreeViewChildren.type, {
@@ -93,6 +95,7 @@ class RcTreeDataProvider implements TreeDataProvider<string> {
         })
     }
     getParent?(uri: string): ProviderResult<string> {
+        return "parent"
         return this.client.sendRequest(RcTreeViewParent.type, {
           viewId: this.viewId,
           nodeUri: uri,

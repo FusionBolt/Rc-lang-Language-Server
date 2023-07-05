@@ -71,6 +71,13 @@
           "command": "rclang.analysis",
           "group": "navigation"
         }
+      ],
+      "view/item/context": [
+        {
+          "command": "rclang.goto",
+          "group": "inline",
+          "when": "view == rclangASTViews"
+        }
       ]
     },
     "commands": [
@@ -95,6 +102,12 @@
       {
         "command": "rclang.newFile",
         "title": "create a new rc file",
+        "category": "rclang"
+      },
+      {
+        "command": "rclang.goto",
+        "title": "Goto",
+        "icon": "$(arrow-right)",
         "category": "rclang"
       }
     ],

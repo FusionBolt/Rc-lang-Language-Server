@@ -49,7 +49,12 @@ def getNode(ast: RcModule, position: Position) = {
   searcher.searchModule(ast)
 }
 
-class ASTPrinter extends rclang.ast.ASTVisitor {
+def getPositionNode(ast: RcModule, position: Position): Option[ASTNode] = {
+  val list = getNode(ast, position)
+  if list.isEmpty then None else Some(list.maxBy(_.priority))
+}
+
+class ASTPrinter(var nest: Boolean = true) extends rclang.ast.ASTVisitor {
   var result = ""
   val indent = "\t"
   var level = 0;
@@ -69,6 +74,9 @@ class ASTPrinter extends rclang.ast.ASTVisitor {
   }
 
   def doIndent(f: () => Unit): Unit = {
+    if(!nest) {
+      return
+    }
     level += 1
     f()
     level -= 1
@@ -108,11 +116,76 @@ class ASTPrinter extends rclang.ast.ASTVisitor {
   }
 
   override def visit(expr: Expr): R = {
-    writeLine("expr", expr)
+    writeLine(expr.getClass.getSimpleName, expr)
+    doIndent(() => {
+      expr match
+        case Expr.Identifier(ident) => visit(ident)
+        case Expr.Binary(op, lhs, rhs) => visit(lhs); visit(rhs)
+        case Expr.If(cond, true_branch, false_branch) => {
+          visit(cond)
+          visit(true_branch)
+          false_branch.map(visit)
+        }
+        case Expr.Lambda(args, block) => {
+          args.params.foreach(visit)
+          visit(block)
+        }
+        case Expr.Call(target, args) => {
+          visit(target)
+          args.foreach(visit)
+        }
+        case Expr.MethodCall(obj, target, args) => {
+          visit(obj)
+          visit(target)
+          args.foreach(visit)
+        }
+        case Expr.Block(stmts) => {
+          stmts.foreach(visit)
+        }
+        case Expr.Return(expr) => visit(expr)
+        case Expr.Field(expr, ident) => {
+          visit(expr)
+          visit(ident)
+        }
+        case Expr.Symbol(ident) => visit(ident)
+        case Expr.Index(expr, i) => {
+          visit(expr)
+          visit(i)
+        }
+        case Expr.Array(len, initValues) => {
+          initValues.foreach(visit)
+        }
+        case _ =>
+    })
   }
 
   override def visit(stmt: Stmt): R = {
-    writeLine(stmt.getClass.getSimpleName, stmt)
+    writeLine("stmt", stmt)
+    doIndent(() => {
+      stmt match
+        case Stmt.Local(name, tyInfo, value) => {
+          visit(name)
+          visit(tyInfo)
+          visit(value)
+        }
+        case Stmt.Expr(expr) => visit(expr)
+        case Stmt.While(cond, body) => {
+          visit(cond)
+          visit(body)
+        }
+        case Stmt.For(init, cond, incr, body) => {
+          visit(init)
+          visit(cond)
+          visit(incr)
+          visit(body)
+        }
+        case Stmt.Assign(name, value) => {
+          visit(name)
+          visit(value)
+        }
+        case Stmt.Break() => writeLine("break", stmt)
+        case Stmt.Continue() => writeLine("continue", stmt)
+    })
   }
 
   override def visit(ty: TyInfo): R = writeLine(s"TyInfo ${ty.getClass.getSimpleName}", ty)

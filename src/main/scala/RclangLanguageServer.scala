@@ -21,7 +21,7 @@ import scala.meta.internal.tvp.*
 // https://javadoc.io/static/org.eclipse.lsp4j/org.eclipse.lsp4j/0.21.0/org/eclipse/lsp4j/services/TextDocumentService.html
 class RclangLanguageServer extends LanguageServer with WorkspaceService with TextDocumentService with RcService with LanguageClientAware {
   thisServer =>
-  var client: LanguageClient = _
+  var client: RcLanguageClient = _
   var rootUri: String = _
 
   import lsp4j.jsonrpc.{CancelChecker, CompletableFutures}
@@ -169,7 +169,8 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
   override def getWorkspaceService: WorkspaceService = this
 
   override def connect(client: LanguageClient): Unit = {
-    this.client = client
+    this.client = client.asInstanceOf[RcLanguageClient]
+    treeViewProvider.client = this.client
   }
 
   override def didChangeConfiguration(params: DidChangeConfigurationParams): Unit = {}
@@ -184,13 +185,16 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
 
   override def didSave(params: DidSaveTextDocumentParams): Unit = {}
 
+  var uri: String = ""
   override def documentSymbol(params: DocumentSymbolParams) = computeAsync { cancelToken =>
     val uri = params.getTextDocument.getUri
+    this.uri = uri
     val ast = driver(uri)
     logMessage("documentSymbol " + uri)
     //    logMessage("ast:" + ast.toString)
     logMessage("ast:\n" + astToStr(ast))
     val table = symbolTable(ast)
+    treeViewProvider.ast = ast
     val symbols = table.classTable.values.flatMap { klass =>
       val methods = klass.methods.values.map { localTable =>
         val method = localTable.astNode
@@ -324,6 +328,23 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
           }
           case None => logMessage("error")
       }
+      case ServerCommands.GoTo(args) => {
+        logMessage("goto")
+        args(0) match
+          case Some(value) => {
+            val position = GotoParams(value).position match
+              case Some(value) => value
+              case None => logMessage("None Position"); ???
+            logMessage(position.getLine.toString)
+            logMessage(position.getCharacter.toString)
+
+            val cmd = WindowLocation(this.uri, new Range(position, position)).toExecuteCommandParams
+            client.rcExecuteClientCommand(cmd)
+          }
+          case None => {
+            logMessage("error")
+          }
+      }
       case ServerCommands.Run() => {
         logMessage("debugger")
       }
@@ -411,18 +432,20 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
   }
 
 
+  private val treeViewProvider = new RcTreeViewProvider(client, null)
+
   override def treeViewChildren(
                                  params: TreeViewChildrenParams
-                               ): CompletableFuture[RcTreeViewChildrenResult] = {
+                               ): CompletableFuture[RcTreeViewChildrenResult] = computeAsync { cancelToken =>
     logMessage("treeViewChildren")
-    null
+    treeViewProvider.children(params)
   }
 
   override def treeViewParent(
                                params: TreeViewParentParams
-                             ): CompletableFuture[TreeViewParentResult] = {
+                             ): CompletableFuture[TreeViewParentResult] = computeAsync { cancelToken =>
     logMessage("treeViewParent")
-    null
+    treeViewProvider.parent(params)
   }
 
   override def treeViewVisibilityDidChange(
@@ -437,14 +460,14 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
                                             ): CompletableFuture[Unit] = computeAsync { cancelToken =>
     logMessage("treeViewNodeCollapseDidChange")
   }
-  
+
   override def treeViewReveal(
                                params: TextDocumentPositionParams
                              ): CompletableFuture[TreeViewNodeRevealResult] = computeAsync { cancelToken =>
     logMessage("treeViewReveal")
     null
   }
-  
+
   // 不知如何触发
   // A document link is a range in a text document that links to an internal or external resource, like another text document or a web site.
   override def documentLink(params: DocumentLinkParams): CompletableFuture[util.List[DocumentLink]] = computeAsync { cancelToken =>
