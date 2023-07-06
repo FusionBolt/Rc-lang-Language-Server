@@ -4,7 +4,13 @@ import rclang.ast.{ASTNode, RcModule}
 
 import scala.meta.internal.tvp.*
 
-class RcTreeViewProvider(var client: LanguageClient, var ast: RcModule) extends TreeViewProvider {
+class RcTreeViewProvider(var client: LanguageClient, private var ast: RcModule) extends TreeViewProvider {
+  private var tree: ASTNodeTree = null
+  def updateAST(newAst: RcModule): Unit = {
+    ast = newAst
+    tree = new TreeBuilder().build(newAst)
+  }
+
   override def init(): Unit = {
   }
 
@@ -13,16 +19,19 @@ class RcTreeViewProvider(var client: LanguageClient, var ast: RcModule) extends 
 
   override def children(params: TreeViewChildrenParams): RcTreeViewChildrenResult = {
     // command is goto line:character
+    logMessage("nodeUri")
     logMessage(params.nodeUri)
+    logMessage("viewId")
     logMessage(params.viewId)
+    val rootLabel = "RcModule"
     val nodes = if(params.nodeUri == null) then
-      Array(new TreeViewNode("module", "module", "module", collapseState = RcTreeItemCollapseState.collapsed))
+      val label = rootLabel
+      Array(new TreeViewNode(label, label, label, collapseState = RcTreeItemCollapseState.collapsed))
     else
-      ast.items.map(item => {
-        val p = new ASTPrinter(false)
-        p.visit(item)
-        val s = p.result
-        new TreeViewNode(s, s, s, ServerCommands.GoTo.cmd)
+      val uri = if params.nodeUri == rootLabel then tree.root.label else params.nodeUri
+      tree(uri).children.map(child => {
+        val label = child.label
+        new TreeViewNode(label, label, label, ServerCommands.GoTo.cmd)
       }).toArray
     new RcTreeViewChildrenResult(nodes)
   }

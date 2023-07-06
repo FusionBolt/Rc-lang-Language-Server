@@ -23,5 +23,3 @@ export function activate(context: vscode.ExtensionContext) {
 export function deactivate() {
 	rcClient.deactivate();
 }
-
-

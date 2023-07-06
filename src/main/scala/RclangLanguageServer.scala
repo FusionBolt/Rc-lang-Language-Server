@@ -194,7 +194,7 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
     //    logMessage("ast:" + ast.toString)
     logMessage("ast:\n" + astToStr(ast))
     val table = symbolTable(ast)
-    treeViewProvider.ast = ast
+    treeViewProvider.updateAST(ast)
     val symbols = table.classTable.values.flatMap { klass =>
       val methods = klass.methods.values.map { localTable =>
         val method = localTable.astNode

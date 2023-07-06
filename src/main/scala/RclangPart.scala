@@ -324,3 +324,116 @@ object PositionRange {
     }
   }
 }
+
+
+class TreeNode(var node: ASTNode, var children: List[TreeNode], var parent: TreeNode = null) {
+  children.foreach(_.parent = this)
+
+  def position = node.getPosition
+
+  def positionRange = node.getPositionRange
+
+  def label = {
+    val p = new ASTPrinter(false)
+    node match
+      case expr: Expr => p.visit(expr)
+      case field: FieldDef => p.visit(field)
+      case ident: Ident => p.visit(ident)
+      case item: Item => p.visit(item)
+      case methodDecl: MethodDecl => p.visit(methodDecl)
+      case modules: Modules => p.visit(modules)
+      case param: Param => p.visit(param)
+      case params: Params => params.params.foreach(p.visit)
+      case rcModule: RcModule => p.visit(rcModule)
+      case stmt: Stmt => p.visit(stmt)
+      case info: TyInfo => p.visit(info)
+      case _ => "notSupported"
+    p.result
+  }
+}
+
+class ASTNodeTree {
+  var root: TreeNode = null
+  private var astNodeMap = Map[ASTNode, TreeNode]()
+  private var strNodeMap = Map[String, TreeNode]()
+  private var nodes = Set[TreeNode]()
+
+  def apply(node: ASTNode): TreeNode = astNodeMap(node)
+  def apply(str: String): TreeNode = strNodeMap(str)
+
+  def addNode(node: TreeNode): Unit = {
+    astNodeMap = astNodeMap + (node.node -> node)
+    strNodeMap = strNodeMap + (node.label -> node)
+    nodes = nodes + node
+  }
+}
+
+class TreeBuilder {
+  type R = TreeNode
+  val root = new ASTNodeTree()
+
+  private def newTreeNode(node: ASTNode, children: List[TreeNode]) = {
+    val newNode: TreeNode = new TreeNode(node, children)
+    root.addNode(newNode)
+    newNode
+  }
+
+  def build(module: RcModule) = {
+    val node = visit(module)
+    root.root = node
+    root
+  }
+  
+  def visit(module: RcModule): R = {
+    // todo: set root
+    val children = module.items.map(visit)
+    newTreeNode(module, children)
+    
+  }
+
+  def visit(item: Item): R = {
+    item match
+      case m @ Method(decl, body) => visit(m)
+      case c @ Class(name, parent, vars, methods, generic) => visit(c)
+      case _ => ???
+  }
+
+  def visit(expr: Expr): R = newTreeNode(expr, Nil)
+
+  def visit(stmt: Stmt): R = newTreeNode(stmt, Nil)
+
+  def visit(ty: TyInfo): R = newTreeNode(ty, Nil)
+
+  def visit(decl: MethodDecl): R = {
+    newTreeNode(decl, Nil)
+  }
+
+  def visit(ident: Ident): R = {
+    newTreeNode(ident, Nil)
+  }
+
+   def visit(param: Param): R = newTreeNode(param, Nil)
+
+   def visit(field: FieldDef): R = newTreeNode(field, Nil)
+
+  def visit(method: Method): R = {
+    val child = List(visit(method.name), visit(method.decl), visit(method.body))
+    newTreeNode(method, child)
+  }
+
+  def visit(klass: Class): R = {
+    val varNodes = klass.vars.map(visit)
+    val methodNodes = klass.methods.map(visit)
+    val child = List(visit(klass.name)):::varNodes:::methodNodes
+    newTreeNode(klass, child)
+  }
+}
+
+
+//def children(uri) {
+//  tree(uri).children.map(child => {
+//    val label = child.label
+//    new TreeNodeInfo(label, ServerCommands.GoTo)
+//    )
+//  }
+//}
