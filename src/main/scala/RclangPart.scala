@@ -7,7 +7,7 @@ import java.io.File
 import java.net.URI
 import rclang.tools.{DumpManager, GlobalTable, unwrap}
 import org.eclipse.lsp4j.*
-import org.eclipse.lsp4j.services.{LanguageClient}
+import org.eclipse.lsp4j.services.LanguageClient
 import rclang.ast.Expr.Self
 
 import scala.collection.immutable
@@ -43,6 +43,17 @@ def symbolTable(uri: String): GlobalTable = {
   symbolTable(ast)
 }
 
+class RcContext() {
+  var ast: RcModule = null
+  var table: GlobalTable = null
+  var tree: ASTNodeTree = null
+  def init(uri: String) = {
+    ast = driver(uri)
+    table = symbolTable(ast)
+    tree = new TreeBuilder().build(ast)
+  }
+}
+
 def symbolTable(ast: RcModule): GlobalTable = {
   rclang.compiler.Driver.typeProc(ast)._2
 }
@@ -59,9 +70,21 @@ def getNode(ast: RcModule, position: Position) = {
   searcher.searchModule(ast)
 }
 
-def getPositionNode(ast: RcModule, position: Position): Option[ASTNode] = {
+class PositionNode(var parents: List[TreeNode] = Nil) {
+  def currentNode = if parents.isEmpty then None else Some(parents.maxBy(_.node.priority))
+  def position = currentNode.map(_.position)
+}
+
+def getPositionNode(ast: RcModule, position: Position, context: RcContext): PositionNode = {
   val list = getNode(ast, position)
-  if list.isEmpty then None else Some(list.maxBy(_.priority))
+  PositionNode(list.map(context.tree(_)))
+}
+
+def astToStrInHover(value: ASTNode): String = {
+    value match
+      case klass: rclang.ast.Class => s"class ${klass.name.str}"
+      case method: rclang.ast.Method => s"method ${method.name.str}"
+      case _ => s"${value.getClass.getSimpleName}: ${value.toString}"
 }
 
 class ASTPrinter(var nest: Boolean = true) extends rclang.ast.ASTVisitor {
@@ -256,13 +279,13 @@ class NodeSearcher(val position: Position) {
     if(!expr.containsPosition(position)) {
       List()
     } else {
-      List(expr)
-//      val list = expr.operands.map{op => {
-//        op match
-//          case expr@Expr => searchExpr(expr.asInstanceOf[Expr])
-//          case _ => Some(op)
-//      }}
-//      list
+      val tree = new ASTNodeTree()
+      val list = tree(expr).children.map(_.node).flatMap {op => {
+        op match
+          case expr: Expr => searchExpr(op.asInstanceOf[Expr])
+          case _ => List()
+      }}
+      list
     }
   }
 }
@@ -408,11 +431,44 @@ class TreeBuilder {
       case _ => ???
   }
 
-  def visit(expr: Expr): R = newTreeNode(expr, Nil)
+  def visit(expr: Expr): R = {
+    val child: List[R] = expr match
+      // todo: visit op
+      case Expr.Identifier(ident) => List(ident).map(visit)
+      case Expr.Binary(op, lhs, rhs) => List(visit(lhs), visit(rhs))
+      case Expr.If(cond, true_branch, false_branch) => {
+        val falseBr = false_branch match
+          case Some(value) => List(visit(value))
+          case None => Nil
+        List(visit(cond), visit(true_branch)):::falseBr
+      }
+      case Expr.Lambda(args, block) => args.params.map(visit):::List(visit(block))
+      case Expr.Call(target, args) => List(visit(target)):::args.map(visit)
+      case Expr.MethodCall(obj, target, args) => List(visit(obj), visit(target)):::args.map(visit)
+      case Expr.Block(stmts) => stmts.map(visit)
+      case Expr.Return(expr) => List(expr).map(visit)
+      case Expr.Field(expr, ident) => List(visit(expr), visit(ident))
+      case Expr.Symbol(ident) => List(ident).map(visit)
+      case Expr.Index(expr, i) => List(expr).map(visit)
+      case Expr.Array(len, initValues) => initValues.map(visit)
+      case _ => List()
+    newTreeNode(expr, child)
+  }
 
-  def visit(stmt: Stmt): R = newTreeNode(stmt, Nil)
+  def visit(stmt: Stmt): R = {
+    val child = stmt match
+      case Stmt.Local(name, tyInfo, value) => List(visit(name), visit(tyInfo), visit(value))
+      case Stmt.Expr(expr) => List(expr).map(visit)
+      case Stmt.While(cond, body) => List(cond, body).map(visit)
+      case Stmt.For(init, cond, incr, body) => List(visit(init), visit(cond), visit(incr), visit(body))
+      case Stmt.Assign(name, value) => List(visit(value))
+      case _ => Nil
+    newTreeNode(stmt, child)
+  }
 
-  def visit(ty: TyInfo): R = newTreeNode(ty, Nil)
+  def visit(ty: TyInfo): R = {
+    newTreeNode(ty, Nil)
+  }
 
   def visit(decl: MethodDecl): R = {
     newTreeNode(decl, Nil)
@@ -422,9 +478,13 @@ class TreeBuilder {
     newTreeNode(ident, Nil)
   }
 
-   def visit(param: Param): R = newTreeNode(param, Nil)
+   def visit(param: Param): R = {
+     newTreeNode(param, Nil)
+   }
 
-   def visit(field: FieldDef): R = newTreeNode(field, Nil)
+   def visit(field: FieldDef): R = {
+     newTreeNode(field, Nil)
+   }
 
   def visit(method: Method): R = {
     val child = List(visit(method.name), visit(method.decl), visit(method.body))
