@@ -7,14 +7,37 @@
     "vscode": "^1.77.0"
   },
   "categories": [
-    "Other"
+    "Programming Languages"
   ],
+  "files.associations": {
+    "*.rc": "rc-lang"
+  },
   "activationEvents": [
 		"onLanguage:plaintext",
     "onDebugResolve:plaintext"
 	],
   "main": "./out/extension.js",
   "contributes": {
+    "languages": [
+      {
+        "id": "rc-lang",
+        "aliases": [
+          "Rc-lang",
+          "rc-lang"
+        ],
+        "extensions": [
+          ".rc"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "rc-lang",
+        "scopeName": "source.rc",
+        "path": "./syntaxes/rc-lang.tmLanguage.json"
+      }
+    ],
 		"configuration": {
 			"type": "Rclang",
 			"title": "Rclang configuration",
@@ -307,7 +330,8 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js"
+    "test": "node ./out/test/runTest.js",
+    "build:syntax": "ts-node src/typescript/GenerateTmLanguageFile.ts > ./syntaxes/rc-lang.tmLanguage.json"
   },
   "devDependencies": {
     "@types/vscode": "^1.77.0",
