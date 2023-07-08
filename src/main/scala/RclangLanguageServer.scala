@@ -171,6 +171,7 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
   override def connect(client: LanguageClient): Unit = {
     this.client = client.asInstanceOf[RcLanguageClient]
     treeViewProvider.client = this.client
+    irPreviewProvider.client = this.client
   }
 
   override def didChangeConfiguration(params: DidChangeConfigurationParams): Unit = {}
@@ -303,6 +304,13 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
     new WorkspaceEdit()
   }
 
+  override def irPreviewPanelUpdate(params: IRPreviewPanelUpdateParams): CompletableFuture[IRPreviewPanelUpdateResult] = computeAsync { cancelToken =>
+    logMessage("irPreviewPanelUpdate")
+    val result = irPreviewProvider.onPanelupdate(params)
+    logMessage("update end")
+    result
+  }
+
   override def signatureHelp(params: SignatureHelpParams): CompletableFuture[SignatureHelp] = computeAsync { cancelToken =>
     val uri = params.getTextDocument.getUri
     val ast = driver(uri)
@@ -433,6 +441,7 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
 
 
   private val treeViewProvider = new RcTreeViewProvider(client, null)
+  private val irPreviewProvider = new RcIRPreviewProvider(client)
 
   override def treeViewChildren(
                                  params: TreeViewChildrenParams

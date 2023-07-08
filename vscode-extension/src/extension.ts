@@ -9,10 +9,10 @@ import { DocumentUri } from 'vscode-languageclient';
 import { registerGoto } from './goto';
 
 export function activate(context: vscode.ExtensionContext) {
-	rcux.initUX()
 	
 	rcDebugger.debuggerRegister(context)
 	let client = rcClient.getClient()
+	rcux.initUX(client, context)
 	let treeViews = rcTreeView.startTreeView(client, context, ["rclangASTViews"])
 	context.subscriptions.concat(treeViews.disposables)
 	registerGoto(context, client)

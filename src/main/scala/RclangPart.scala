@@ -12,6 +12,16 @@ import rclang.ast.Expr.Self
 
 import scala.collection.immutable
 
+def driverByPath(path: String) = {
+  // 1. read from uri
+  val f = new File(path)
+  val source = scala.io.Source.fromFile(f)
+  val src = source.getLines().mkString("\n") + "\n"
+  // 2. parse and return ast
+  val ast = RcParser(Lexer(src).unwrap).unwrap
+  ast
+}
+
 def driver(uri: String) = {
   // 1. read from uri
   val f = new File(URI.create(uri))
@@ -383,12 +393,12 @@ class TreeBuilder {
     root.root = node
     root
   }
-  
+
   def visit(module: RcModule): R = {
     // todo: set root
     val children = module.items.map(visit)
     newTreeNode(module, children)
-    
+
   }
 
   def visit(item: Item): R = {

@@ -34,4 +34,9 @@ trait RcService {
   def treeViewNodeCollapseDidChange(
                                      params: TreeViewNodeCollapseDidChangeParams
                                    ): CompletableFuture[Unit]
+
+  @JsonRequest("Rc/irPreviewPanelUpdate")
+  def irPreviewPanelUpdate(
+                            params: IRPreviewPanelUpdateParams
+                          ): CompletableFuture[IRPreviewPanelUpdateResult]
 }
