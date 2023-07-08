@@ -1,11 +1,13 @@
 import org.eclipse.lsp4j.{CompletionOptions, DidChangeConfigurationParams, DidChangeTextDocumentParams, DidChangeWatchedFilesParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams, InitializeParams, InitializeResult, ServerCapabilities}
-import org.eclipse.lsp4j.jsonrpc.CompletableFutures
+import org.eclipse.lsp4j.jsonrpc.{CancelChecker, CompletableFutures}
 import org.eclipse.lsp4j.services.{LanguageClient, LanguageClientAware, LanguageServer, TextDocumentService, WorkspaceService}
 import org.eclipse.lsp4j
 import lsp4j.*
 import rclang.ast
 import rclang.ast.Method
 
+import lsp4j.jsonrpc.messages.{Either => JEither}
+import scala.util.control.NonFatal
 import java.net.URI
 import java.util
 import scala.concurrent.Future
@@ -17,79 +19,23 @@ import collection.JavaConverters.seqAsJavaListConverter
 import scala.util.{Failure, Success}
 import scala.meta.internal.tvp.*
 
-// https://javadoc.io/doc/org.eclipse.lsp4j/org.eclipse.lsp4j/latest/index.html
-// https://javadoc.io/static/org.eclipse.lsp4j/org.eclipse.lsp4j/0.21.0/org/eclipse/lsp4j/services/TextDocumentService.html
-class RclangLanguageServer extends LanguageServer with WorkspaceService with TextDocumentService with RcService with LanguageClientAware {
-  thisServer =>
-  var client: RcLanguageClient = _
-  var rootUri: String = _
 
-  import lsp4j.jsonrpc.{CancelChecker, CompletableFutures}
-  import lsp4j.jsonrpc.messages.{Either => JEither}
-  import scala.util.control.NonFatal
+class RcLanguageService(var server: RcLanguageServer) extends RcLSPService {
+  private var uri: String = ""
+  private val treeViewProvider = new RcTreeViewProvider(client, null)
+  private val irPreviewProvider = new RcIRPreviewProvider(client)
+  // todo: save context for file had been opened
+  private val rcContext = new RcContext()
 
-  def computeAsync[R](fun: CancelChecker => R): CompletableFuture[R] =
-    CompletableFutures.computeAsync({ (cancelToken: CancelChecker) =>
-      // We do not support any concurrent use of the compiler currently.
-      thisServer.synchronized {
-        cancelToken.checkCanceled()
-        try {
-          fun(cancelToken)
-        } catch {
-          case NonFatal(ex) =>
-            ex.printStackTrace
-            throw ex
-        }
-      }
-    })
+  def client = server.client
 
-  val TokenTypes: List[String] = List(
-    SemanticTokenTypes.Namespace,
-    SemanticTokenTypes.Type,
-    SemanticTokenTypes.Class,
-    SemanticTokenTypes.Enum,
-    SemanticTokenTypes.Interface,
-    SemanticTokenTypes.Struct,
-    SemanticTokenTypes.TypeParameter,
-    SemanticTokenTypes.Parameter,
-    SemanticTokenTypes.Variable,
-    SemanticTokenTypes.Property,
-    SemanticTokenTypes.EnumMember,
-    SemanticTokenTypes.Event,
-    SemanticTokenTypes.Function,
-    SemanticTokenTypes.Method,
-    SemanticTokenTypes.Macro,
-    SemanticTokenTypes.Keyword,
-    SemanticTokenTypes.Modifier,
-    SemanticTokenTypes.Comment,
-    SemanticTokenTypes.String,
-    SemanticTokenTypes.Number,
-    SemanticTokenTypes.Regexp,
-    SemanticTokenTypes.Operator,
-    SemanticTokenTypes.Decorator
-  )
+  def logMessage(str: String) = server.logMessage(str)
 
-  val TokenModifiers: List[String] = List(
-    SemanticTokenModifiers.Declaration,
-    SemanticTokenModifiers.Definition,
-    SemanticTokenModifiers.Readonly,
-    SemanticTokenModifiers.Static,
-    SemanticTokenModifiers.Deprecated,
-    SemanticTokenModifiers.Abstract,
-    SemanticTokenModifiers.Async,
-    SemanticTokenModifiers.Modification,
-    SemanticTokenModifiers.Documentation,
-    SemanticTokenModifiers.DefaultLibrary
-  )
+  def computeAsync[R](fun: CancelChecker => R): CompletableFuture[R] = server.computeAsync(fun)
 
-  override def initialize(params: InitializeParams): CompletableFuture[InitializeResult] = computeAsync { cancelToken =>
-    rootUri = params.getRootUri
-    assert(rootUri != null)
-
-    initRclang()
-
-//    val f = new FileOperationsServerCapabilities
-//    val d = new WorkspaceServerCapabilities
+  def getServerCapabilities: ServerCapabilities = {
+    //    val f = new FileOperationsServerCapabilities
+    //    val d = new WorkspaceServerCapabilities
     val c = new ServerCapabilities
     c.setTextDocumentSync(TextDocumentSyncKind.Full)
     c.setDocumentHighlightProvider(true)
@@ -107,7 +53,7 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
 
     c.setCallHierarchyProvider(true)
 
-//    c.setCodeActionProvider(true)
+    //    c.setCodeActionProvider(true)
     c.setCodeActionProvider(new CodeActionOptions(
       List(
         CodeActionKind.QuickFix,
@@ -119,7 +65,7 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
     c.setCodeLensProvider(new CodeLensOptions(false))
 
     c.setDeclarationProvider(true)
-//    c.setDiagnosticProvider(new DiagnosticRegistrationOptions(false, true))
+    //    c.setDiagnosticProvider(new DiagnosticRegistrationOptions(false, true))
     c.setDocumentFormattingProvider(true)
     // CodeAction的id也可以加到这里
     c.setExecuteCommandProvider(new ExecuteCommandOptions(ServerCommands.allIds.toList.asJava))
@@ -136,67 +82,50 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
     semanticTokensOption.setFull(true)
     semanticTokensOption.setRange(false)
     semanticTokensOption.setLegend(new SemanticTokensLegend(
-      this.TokenTypes.asJava,
-      this.TokenModifiers.asJava
+      SemanticTokensProvider.TokenTypes.asJava,
+      SemanticTokensProvider.TokenModifiers.asJava
     ))
     c.setSemanticTokensProvider(semanticTokensOption)
 
-//    c.setTextDocumentSync(true)
+    //    c.setTextDocumentSync(true)
     c.setTypeDefinitionProvider(true)
     c.setTypeHierarchyProvider(true)
-//    c.setWorkspace(true)
+    //    c.setWorkspace(true)
     c.setWorkspaceSymbolProvider(true)
 
     // todo: Fuzzy symbol search
     // Do most of the initialization asynchronously so that we can return early
     // from this method and thus let the client know our capabilities.
     //    CompletableFuture.supplyAsync(() => drivers)
-
-    val serverInfo = new ServerInfo("rc-lang", "0.0.1")
-    new InitializeResult(c, serverInfo)
-  }
-
-  override def shutdown(): CompletableFuture[Object] = {
-    CompletableFuture.completedFuture(new Object)
-  }
-
-  override def exit(): Unit = {
-    System.exit(0)
-  }
-
-  override def getTextDocumentService: TextDocumentService = this
-
-  override def getWorkspaceService: WorkspaceService = this
-
-  override def connect(client: LanguageClient): Unit = {
-    this.client = client.asInstanceOf[RcLanguageClient]
-    treeViewProvider.client = this.client
-    irPreviewProvider.client = this.client
+    c
   }
 
   override def didChangeConfiguration(params: DidChangeConfigurationParams): Unit = {}
 
   override def didChangeWatchedFiles(params: DidChangeWatchedFilesParams): Unit = {}
 
-  override def didOpen(params: DidOpenTextDocumentParams): Unit = {}
+  override def didOpen(params: DidOpenTextDocumentParams): Unit = {
+    this.uri = params.getTextDocument.getUri
+    initForTextDocument(this.uri)
+  }
 
-  override def didChange(params: DidChangeTextDocumentParams): Unit = {}
+  private def initForTextDocument(uri: String): Unit = {
+    rcContext.init(uri)
+    treeViewProvider.updateRoot(rcContext.tree)
+    logMessage("didOpen")
+  }
+
+  override def didChange(params: DidChangeTextDocumentParams): Unit = {
+    this.uri = params.getTextDocument.getUri
+    initForTextDocument(this.uri)
+  }
 
   override def didClose(params: DidCloseTextDocumentParams): Unit = {}
 
   override def didSave(params: DidSaveTextDocumentParams): Unit = {}
 
-  var uri: String = ""
   override def documentSymbol(params: DocumentSymbolParams) = computeAsync { cancelToken =>
-    val uri = params.getTextDocument.getUri
-    this.uri = uri
-    val ast = driver(uri)
-    logMessage("documentSymbol " + uri)
-    //    logMessage("ast:" + ast.toString)
-    logMessage("ast:\n" + astToStr(ast))
-    val table = symbolTable(ast)
-    treeViewProvider.updateAST(ast)
-    val symbols = table.classTable.values.flatMap { klass =>
+    val symbols = rcContext.table.classTable.values.flatMap { klass =>
       val methods = klass.methods.values.map { localTable =>
         val method = localTable.astNode
         new DocumentSymbol(method.name.str, SymbolKind.Method,
@@ -237,23 +166,12 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
   }
 
   override def hover(params: HoverParams): CompletableFuture[Hover] = computeAsync { cancelToken =>
-    val uri = params.getTextDocument.getUri
-    val ast = driver(uri)
-
     logMessage(f"hover: ${params.getPosition}");
-    val str = getPositionNode(ast, params.getPosition) match
-      case Some(value) => {
-        value match
-          case klass: rclang.ast.Class => s"class ${klass.name.str}"
-          case method: rclang.ast.Method => s"method ${method.name.str}"
-          case _ => s"${value.getClass.getSimpleName}: ${value.toString}"
-      }
-      case None => "not found"
-    new Hover(new MarkupContent("plaintext", str))
-  }
-
-  private def logMessage(message: String): Unit = {
-    client.logMessage(new MessageParams(MessageType.Info, message));
+    val node = getPositionNode(rcContext.ast, params.getPosition, rcContext)
+    val str = node.currentNode match
+      case Some(ast) => astToStrInHover(ast.node)
+      case None => ""
+    new Hover(new MarkupContent(MarkupKind.PLAINTEXT, str))
   }
 
   // go to definition的时候reference也会一起触发
@@ -261,12 +179,12 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
     logMessage("definition")
     val uri = params.getTextDocument.getUri
     val ast = driver(uri)
-//    getPositionNode(ast, params.getPosition) match
-//      case Some(value) => {
-//        findDef(value, symbolTable(ast))
-//        JEither.forLeft(List(new Location(uri, m.getPositionRange)))
-//      }
-//      case None => JEither.forLeft(Nil.asJava)
+    //    getPositionNode(ast, params.getPosition) match
+    //      case Some(value) => {
+    //        findDef(value, symbolTable(ast))
+    //        JEither.forLeft(List(new Location(uri, m.getPositionRange)))
+    //      }
+    //      case None => JEither.forLeft(Nil.asJava)
     JEither.forLeft(Nil.asJava)
   }
 
@@ -359,7 +277,7 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
       case _ => {
         logMessage("unknown command")
       }
-      null
+    null
   }
 
   // fix or refactor, e.g. alt + enter
@@ -429,7 +347,7 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
       List(
         new Diagnostic(new Range(new Position(1, 1), new Position(1, 5)), "diagnosticMessage")
       ).asJava)
-//    val unchanged = new RelatedUnchangedDocumentDiagnosticReport("ResultId")
+    //    val unchanged = new RelatedUnchangedDocumentDiagnosticReport("ResultId")
     new DocumentDiagnosticReport(fullReport)
   }
 
@@ -438,10 +356,6 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
     logMessage("semanticTokensFull")
     new SemanticTokens(List(new Integer(3), new Integer(3), new Integer(3)).asJava)
   }
-
-
-  private val treeViewProvider = new RcTreeViewProvider(client, null)
-  private val irPreviewProvider = new RcIRPreviewProvider(client)
 
   override def treeViewChildren(
                                  params: TreeViewChildrenParams
@@ -487,14 +401,14 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
 
   // color decorators https://code.visualstudio.com/api/language-extensions/programmatic-language-features#show-color-decorators
   // capabilities.setColorProvider(true)
-//  override def colorPresentation(params: ColorPresentationParams): CompletableFuture[util.List[ColorPresentation]] = computeAsync { cancelToken =>
-//    logMessage("colorPresentation")
-//    List(new ColorPresentation("colorPresentation")).asJava
-//  }
-//  override def documentColor(params: DocumentColorParams): CompletableFuture[util.List[ColorInformation]] = computeAsync { cancelToken =>
-//    logMessage("documentColor")
-//    null
-//  }
+  //  override def colorPresentation(params: ColorPresentationParams): CompletableFuture[util.List[ColorPresentation]] = computeAsync { cancelToken =>
+  //    logMessage("colorPresentation")
+  //    List(new ColorPresentation("colorPresentation")).asJava
+  //  }
+  //  override def documentColor(params: DocumentColorParams): CompletableFuture[util.List[ColorInformation]] = computeAsync { cancelToken =>
+  //    logMessage("documentColor")
+  //    null
+  //  }
 
 
   override def moniker(params: MonikerParams): CompletableFuture[util.List[Moniker]] = computeAsync { cancelToken =>
@@ -513,13 +427,13 @@ class RclangLanguageServer extends LanguageServer with WorkspaceService with Tex
     JEither.forLeft(Nil.asJava)
   }
 
-//  // used for debugger, like inlayHint End, should enable in settings
-//  override def inlineValue(params: InlineValueParams): CompletableFuture[util.List[InlineValue]] = computeAsync { cancelToken =>
-//    logMessage("inlineValue")
-//    List(
-//      new InlineValue(new InlineValueText(params.getRange, "inlineValue")),
-//      new InlineValue(new InlineValueVariableLookup(params.getRange, false, "VarName")),
-//      new InlineValue(new InlineValueEvaluatableExpression(params.getRange, "inlineValueExpr"))
-//    ).asJava
-//  }
+  //  // used for debugger, like inlayHint End, should enable in settings
+  //  override def inlineValue(params: InlineValueParams): CompletableFuture[util.List[InlineValue]] = computeAsync { cancelToken =>
+  //    logMessage("inlineValue")
+  //    List(
+  //      new InlineValue(new InlineValueText(params.getRange, "inlineValue")),
+  //      new InlineValue(new InlineValueVariableLookup(params.getRange, false, "VarName")),
+  //      new InlineValue(new InlineValueEvaluatableExpression(params.getRange, "inlineValueExpr"))
+  //    ).asJava
+  //  }
 }

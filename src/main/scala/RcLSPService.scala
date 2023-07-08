@@ -1,6 +1,6 @@
 import org.eclipse.lsp4j.*
-import org.eclipse.lsp4j.jsonrpc.services.JsonNotification
-import org.eclipse.lsp4j.jsonrpc.services.JsonRequest
+import org.eclipse.lsp4j.jsonrpc.services.{JsonDelegate, JsonNotification, JsonRequest}
+import org.eclipse.lsp4j.services.{LanguageServer, TextDocumentService, WorkspaceService}
 
 import java.util
 import java.util.concurrent.CompletableFuture

@@ -6,9 +6,8 @@ import scala.meta.internal.tvp.*
 
 class RcTreeViewProvider(var client: LanguageClient, private var ast: RcModule) extends TreeViewProvider {
   private var tree: ASTNodeTree = null
-  def updateAST(newAst: RcModule): Unit = {
-    ast = newAst
-    tree = new TreeBuilder().build(newAst)
+  def updateRoot(root: ASTNodeTree): Unit = {
+    tree = root
   }
 
   override def init(): Unit = {
