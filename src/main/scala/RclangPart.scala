@@ -5,10 +5,11 @@ import rclang.compiler
 
 import java.io.File
 import java.net.URI
-import rclang.tools.{DumpManager, GlobalTable, unwrap}
+import rclang.tools.{DumpManager, FullName, GlobalTable, unwrap}
 import org.eclipse.lsp4j.*
 import org.eclipse.lsp4j.services.LanguageClient
 import rclang.ast.Expr.Self
+import rclang.ast.TyInfo.Infer
 
 import scala.collection.immutable
 
@@ -47,6 +48,7 @@ class RcContext() {
   var ast: RcModule = null
   var table: GlobalTable = null
   var tree: ASTNodeTree = null
+  var client: LanguageClient = null
   def init(uri: String) = {
     ast = driver(uri)
     table = symbolTable(ast)
@@ -65,19 +67,42 @@ def initRclang() = {
 def keywords = rclang.lexer.Keyword.values
 
 // position to ast node
-def getNode(ast: RcModule, position: Position) = {
-  val searcher = new NodeSearcher(position)
+def getNode(ast: RcModule, position: Position)(using context: RcContext) = {
+  val searcher = new NodeSearcher(position, context)
   searcher.searchModule(ast)
 }
 
-class PositionNode(var parents: List[TreeNode] = Nil) {
-  def currentNode = if parents.isEmpty then None else Some(parents.maxBy(_.node.priority))
+class PositionNode(var parents: List[TreeNode] = Nil, var originPosition: Position) {
+  var client = null: LanguageClient
+  private def getPriority(range: Range): Int = {
+    // 行范围最小的
+    val line = Math.abs(range.getEnd.getLine - range.getStart.getLine)
+    // 行最接近position的
+    val character = Math.abs(range.getStart.getCharacter - originPosition.getCharacter)
+    // 但是如果有多个同样起点的，就选择最短的
+    val size = Math.abs(range.getEnd.getCharacter - range.getStart.getCharacter)
+    client.logMessage(new MessageParams(MessageType.Info, s"getPriority $line $character"))
+    // character相同的情况下看size
+    val result = line * 1000 + character + size
+    client.logMessage(new MessageParams(MessageType.Info, s"$result"))
+    result
+  }
+
+  def currentNode = {
+    if (parents.isEmpty) {
+      None
+    } else {
+      val msg = parents.map(parent => s"${parent.node.getClass} ${getPriority(parent.node.getPositionRange)} ${parent.node}").mkString("\n")
+      val result = parents.minBy(parent => getPriority(parent.node.getPositionRange))
+      Some(result)
+    }
+  }
   def position = currentNode.map(_.position)
 }
 
-def getPositionNode(ast: RcModule, position: Position, context: RcContext): PositionNode = {
+def getPositionNode(ast: RcModule, position: Position)(using context: RcContext): PositionNode = {
   val list = getNode(ast, position)
-  PositionNode(list.map(context.tree(_)))
+  PositionNode(list.map(context.tree(_)), position)
 }
 
 def astToStrInHover(value: ASTNode): String = {
@@ -238,8 +263,62 @@ class ASTPrinter(var nest: Boolean = true) extends rclang.ast.ASTVisitor {
   override def visit(field: FieldDef): R = writeLine(s"FieldDef ${field.name.str}", field)
 }
 
+def makeFullName(node: TreeNode) = {
+//  FullName()
+}
 
-class NodeSearcher(val position: Position) {
+def lookup(name: String)(using context: RcContext): Option[ASTNode] = {
+  // Symbol -> Class
+  if(name.head.isUpper) {
+    context.table.classTable.get(name).map(_.astNode)
+  } else {
+    None
+    // local var
+    // field
+    // method
+  }
+}
+
+def definitionList(node: TreeNode)(using context: RcContext): List[ASTNode] = {
+  node.node match
+    case Ident(name) => {
+      lookup(name) match
+        case Some(value) => List(value)
+        case None => {
+          context.client.logMessage(new MessageParams(MessageType.Info, "DefNone"))
+          List()
+        }
+    }
+    case _ => {
+      context.client.logMessage(new MessageParams(MessageType.Info, "Expr Not Expr"))
+      context.client.logMessage(new MessageParams(MessageType.Info, node.node.toString))
+      List()
+    }
+}
+
+class NodeSearcher(val position: Position, val context: RcContext) {
+  def search(astNode: ASTNode): List[ASTNode] = {
+    astNode match
+      case Empty => List()
+      case expr: Expr => searchExpr(expr)
+//      case FieldDef(name, ty, initValue) =>
+      case id: Ident => {
+        if id.getPositionRange.contains(position) then
+          List(id)
+        else
+          List()
+      }
+      case item: Item => searchItem(item)
+//      case MethodDecl(name, inputs, outType, generic) =>
+//      case Modules(modules) =>
+      case Param(name, ty) => search(name):::search(ty)
+      case Params(params) => params.flatMap(search)
+      case RcModule(items, name, refs) => items.flatMap(search)
+      case stmt: Stmt => searchStmt(stmt)
+      case info: TyInfo => searchTyInfo(info)
+      case _ => List()
+  }
+
   def searchModule(ast: RcModule): List[ASTNode] = {
     ast.items.flatMap(searchItem)
   }
@@ -252,6 +331,9 @@ class NodeSearcher(val position: Position) {
   }
 
   def searchMethod(ast: Method): List[ASTNode] = {
+    if(ast.decl.name.containsPosition(position)) {
+      return List(ast.decl.name)
+    }
     ast.decl.containsPosition(position) match
       case true => List(ast.decl, ast)
       case false => {
@@ -276,17 +358,31 @@ class NodeSearcher(val position: Position) {
   }
 
   def searchExpr(expr: Expr): List[ASTNode] = {
-    if(!expr.containsPosition(position)) {
+    if (!expr.containsPosition(position)) {
+//      context.client.logMessage(new MessageParams(MessageType.Warning, s"expr ${expr.getClass.getSimpleName} not contains position ${position.getLine}:${position.getCharacter}"))
       List()
     } else {
-      val tree = new ASTNodeTree()
-      val list = tree(expr).children.map(_.node).flatMap {op => {
-        op match
-          case expr: Expr => searchExpr(op.asInstanceOf[Expr])
-          case _ => List()
-      }}
-      list
+//      context.client.logMessage(new MessageParams(MessageType.Warning, s"expr ${expr.getClass.getSimpleName} contains position ${position.getLine}:${position.getCharacter}"))
+      val tree = context.tree
+      val list = tree(expr).children.map(_.node).flatMap(search)
+      list :+ expr
     }
+  }
+
+  def searchStmt(stmt: Stmt): List[ASTNode] = {
+    if(!stmt.containsPosition(position)) {
+        return List()
+    }
+    val tree = context.tree
+    val list = tree(stmt).children.map(_.node).flatMap(search)
+    list :+ stmt
+  }
+
+  def searchTyInfo(info: TyInfo): List[ASTNode] = {
+    if(!info.containsPosition(position)) {
+      return List()
+    }
+    List(info)
   }
 }
 
@@ -319,21 +415,25 @@ extension (p: ASTNode) {
     case method: Method => PositionRange.getMethodPositionRange(method)
     case fieldDef: FieldDef => PositionRange.getFieldPositionRange(fieldDef)
     case klass: rclang.ast.Class => PositionRange.getClassPositionRange(klass)
+    case expr: Expr => PositionRange.getExprPositionRange(expr)
+    case ident: Ident => PositionRange.getIdentPositionRange(ident)
+    case methodDecl: MethodDecl => PositionRange.getMethodDeclPositionRange(methodDecl)
+//    case modules: Modules => p.visit(modules)
+//    case param: Param => p.visit(param)
+//    case params: Params => params.params.foreach(p.visit)
+//    case rcModule: RcModule => p.visit(rcModule)
+    case stmt: Stmt => PositionRange.getStmtPositionRange(stmt)
+//    case info: TyInfo => p.visit(info)
+//    case item: Item
     case _ => new Range(p.getPosition, p.getPosition)
 
-  def containsPosition(position: Position) = p.getPositionRange.contains(position)
 
-  def priority = {
-    p match
-      case _: rclang.ast.Class => 1
-      case _: Method => 2
-      case _ => 0
-  }
+  def containsPosition(position: Position) = p.getPositionRange.contains(position)
 }
 
 object PositionRange {
   def getMethodPositionRange(method: Method) = {
-    val begin = method.name.getPosition
+    val begin = addCharacter(method.name.getPosition, -("def ".length))
     if (method.body.stmts.isEmpty) {
       new Range(begin, begin)
     } else {
@@ -355,6 +455,78 @@ object PositionRange {
       val end = getMethodPositionRange(klass.methods.maxBy(_.name.pos.line)).getEnd
       new Range(begin, end)
     }
+  }
+
+  def addCharacter(position: Position, offset: Int) = {
+    new Position(position.getLine, position.getCharacter + offset)
+  }
+
+  def addCharacter(position: Position, str: String) = {
+    new Position(position.getLine, position.getCharacter + str.length)
+  }
+
+  def getListRange(list: List[ASTNode], offset: Int = 0) = {
+    if(list.isEmpty) {
+      new Range(new Position(0, 0), new Position(0, 0))
+    } else {
+      val begin = list.head.getPosition
+      val end = addCharacter(list.last.getPositionRange.getEnd, offset)
+      new Range(begin, end)
+    }
+  }
+
+  def listOperate(list: List[ASTNode], f: (List[ASTNode] => Position)): Position = {
+    if(list.isEmpty) {
+      new Position(0, 0)
+    } else {
+      f(list)
+    }
+  }
+
+  def getExprPositionRange(expr: Expr) = {
+    expr match
+      case Expr.Number(v) => new Range(expr.getPosition, addCharacter(expr.getPosition, v.toString))
+      case Expr.Identifier(ident) => new Range(expr.getPosition, addCharacter(expr.getPosition, ident.str))
+      case Expr.Bool(b) => new Range(expr.getPosition, addCharacter(expr.getPosition, b.toString))
+      case Expr.Binary(op, lhs, rhs) => new Range(new Position(op.pos.line, op.pos.column), rhs.getPositionRange.getEnd)
+      case Expr.Str(str) => new Range(expr.getPosition, addCharacter(expr.getPosition, str.length + 1))
+      case Expr.If(cond, true_branch, false_branch) => ???
+      case Expr.Lambda(args, block) => ???
+      case Expr.Call(target, args) => getCallRange(target, args)
+      case Expr.MethodCall(obj, target, args) => getCallRange(obj, args)
+      case Expr.Block(stmts) => getListRange(stmts)
+      case Expr.Return(expr) => new Range(addCharacter(expr.getPosition, "return".length + 1), expr.getPositionRange.getEnd)
+      case Expr.Field(expr, ident) => new Range(expr.getPosition, getIdentPositionRange(ident).getEnd)
+      case Self => new Range(expr.getPosition, addCharacter(expr.getPosition, "self"))
+      case Expr.Symbol(ident) => new Range(expr.getPosition, addCharacter(expr.getPosition, ident.str))
+      case Expr.Index(expr, i) => ???
+      case Expr.Array(len, initValues) => ???
+
+  }
+
+  private def getCallRange(target: ASTNode, args: List[Expr]) = {
+    new Range(target.getPosition, listOperate(args, args => addCharacter(args.last.getPositionRange.getEnd, 1)))
+  }
+
+  def getStmtPositionRange(stmt: Stmt) = {
+    stmt match
+      case Stmt.Local(name, tyInfo, value) => new Range(name.getPosition, value.getPositionRange.getEnd)
+      case Stmt.Expr(expr) => getExprPositionRange(expr)
+      case Stmt.While(cond, body) => new Range(cond.getPosition, body.getPositionRange.getEnd)
+      case Stmt.For(init, cond, incr, body) => new Range(init.getPosition, body.getPositionRange.getEnd)
+      case Stmt.Assign(name, value) => new Range(name.getPosition, value.getPositionRange.getEnd)
+      case Stmt.Break() => new Range(stmt.getPosition, addCharacter(stmt.getPosition, "break"))
+      case Stmt.Continue() => new Range(stmt.getPosition, addCharacter(stmt.getPosition, "continue"))
+  }
+
+  def getIdentPositionRange(id: Ident) = {
+    new Range(id.getPosition, addCharacter(id.getPosition, id.str))
+  }
+
+  def getMethodDeclPositionRange(methodDecl: MethodDecl) = {
+    val begin = methodDecl.name.getPosition
+    val end = methodDecl.outType.getPosition
+    new Range(begin, end)
   }
 }
 
@@ -498,12 +670,3 @@ class TreeBuilder {
     newTreeNode(klass, child)
   }
 }
-
-
-//def children(uri) {
-//  tree(uri).children.map(child => {
-//    val label = child.label
-//    new TreeNodeInfo(label, ServerCommands.GoTo)
-//    )
-//  }
-//}

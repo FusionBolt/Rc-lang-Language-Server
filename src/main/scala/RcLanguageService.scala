@@ -26,7 +26,7 @@ class RcLanguageService(var server: RcLanguageServer) extends RcLSPService {
   private val irPreviewProvider = new RcIRPreviewProvider(client)
   // todo: save context for file had been opened
   private val rcContext = new RcContext()
-
+  rcContext.client = this.client
   def client = server.client
 
   def logMessage(str: String) = server.logMessage(str)
@@ -165,27 +165,30 @@ class RcLanguageService(var server: RcLanguageServer) extends RcLSPService {
     JEither.forRight(new CompletionList(false, items.asJava))
   }
 
+  given RcContext = rcContext
   override def hover(params: HoverParams): CompletableFuture[Hover] = computeAsync { cancelToken =>
     logMessage(f"hover: ${params.getPosition}");
-    val node = getPositionNode(rcContext.ast, params.getPosition, rcContext)
+    val node = getPositionNode(rcContext.ast, params.getPosition)
+    node.client = this.client
     val str = node.currentNode match
       case Some(ast) => astToStrInHover(ast.node)
-      case None => ""
+      case None => "not found"
     new Hover(new MarkupContent(MarkupKind.PLAINTEXT, str))
   }
 
   // go to definition的时候reference也会一起触发
   override def definition(params: DefinitionParams): CompletableFuture[JEither[util.List[_ <: Location], util.List[_ <: LocationLink]]] = computeAsync { cancelToken =>
     logMessage("definition")
-    val uri = params.getTextDocument.getUri
-    val ast = driver(uri)
-    //    getPositionNode(ast, params.getPosition) match
-    //      case Some(value) => {
-    //        findDef(value, symbolTable(ast))
-    //        JEither.forLeft(List(new Location(uri, m.getPositionRange)))
-    //      }
-    //      case None => JEither.forLeft(Nil.asJava)
-    JEither.forLeft(Nil.asJava)
+    hoverSymbolImplement(params.getPosition)
+  }
+
+  private def hoverSymbolImplement(position: Position): JEither[util.List[_ <: Location], util.List[_ <: LocationLink]] = {
+    val node = getPositionNode(rcContext.ast, position)
+    node.client = this.client
+    val list = node.currentNode match
+      case Some(ast) => definitionList(ast).map(node => new Location(uri, node.getPositionRange)).asJava
+      case None => List().asJava
+    JEither.forLeft(list)
   }
 
   override def references(params: ReferenceParams): CompletableFuture[util.List[_ <: Location]] = computeAsync { cancelToken =>
@@ -207,12 +210,12 @@ class RcLanguageService(var server: RcLanguageServer) extends RcLSPService {
 
   override def declaration(params: DeclarationParams): CompletableFuture[JEither[util.List[_ <: Location], util.List[_ <: LocationLink]]] = computeAsync { cancelToken =>
     logMessage("declaration")
-    null
+    hoverSymbolImplement(params.getPosition)
   }
 
   override def implementation(params: ImplementationParams): CompletableFuture[JEither[util.List[_ <: Location], util.List[_ <: LocationLink]]] = computeAsync { cancelToken =>
     logMessage("implementation")
-    null
+    hoverSymbolImplement(params.getPosition)
   }
 
   // 输入完新的名字以后会触发
@@ -330,15 +333,16 @@ class RcLanguageService(var server: RcLanguageServer) extends RcLSPService {
   override def documentHighlight(params: DocumentHighlightParams): CompletableFuture[util.List[_ <: DocumentHighlight]] = computeAsync { cancelToken =>
     // 单击到某个位置会触发，比如说点到一个单词的位置，那么单词高亮
     logMessage("highlight")
-    val uri = params.getTextDocument.getUri
-    val ast = driver(uri)
-    val list = getNode(ast, params.getPosition)
-    if (list.isEmpty) {
-      Nil.asJava
-    } else {
-      val x = list.minBy(_.priority)
-      List(new DocumentHighlight(x.getPositionRange, DocumentHighlightKind.Text)).asJava
-    }
+//    val uri = params.getTextDocument.getUri
+//    val ast = driver(uri)
+//    val list = getNode(ast, params.getPosition)
+//    if (list.isEmpty) {
+//      Nil.asJava
+//    } else {
+//      val x = list.minBy(_.priority)
+//      List(new DocumentHighlight(x.getPositionRange, DocumentHighlightKind.Text)).asJava
+//    }
+    null
   }
 
   override def diagnostic(params: DocumentDiagnosticParams): CompletableFuture[DocumentDiagnosticReport] = computeAsync { cancelToken =>
